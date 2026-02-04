@@ -15,7 +15,7 @@
                 <div v-for="(message, index) in messages" :key="index" class="row" :class="message.type">
                     <div v-if="message.type === 'bot'" class="avatar">{{ brandInitial }}</div>
 
-                    <div class="bubble" :class="[message.type, { 'is-streaming': message.isStreaming && !message.text }]">
+                    <div class="bubble" :class="message.type">
                         <template v-if="message.isTyping">
                             <span class="typing">
                                 <span></span>
@@ -24,13 +24,8 @@
                             </span>
                         </template>
                         <template v-else>
-                            <!-- Skeleton Loader while streaming and text is empty -->
-                            <div v-if="message.isStreaming && !message.text" class="skeleton-loader">
-                                <div class="skeleton-line"></div>
-                                <div class="skeleton-line short"></div>
-                            </div>
-                            
-                            <span v-else>{{ message.text }}</span>
+                            <!-- Markdown Rendered Content -->
+                            <div class="markdown-content" v-html="renderMarkdown(message.text)"></div>
 
                             <!-- Attachments -->
                             <div v-if="message.attachments?.length" class="attach">
@@ -93,44 +88,28 @@
 
 <script>
 import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { marked } from 'marked';
 
 export default {
     name: 'LooplyChat',
     props: {
-        content: {
-            type: Object,
-            required: true
-        },
-        uid: {
-            type: String,
-            required: true
-        },
+        content: { type: Object, required: true },
+        uid: { type: String, required: true },
         /* wwEditor:start */
-        wwEditorState: {
-            type: Object,
-            required: true
-        }
+        wwEditorState: { type: Object, required: true }
         /* wwEditor:end */
     },
     emits: ['trigger-event'],
-    setup(props, { emit }) {
-        const isEditing = computed(() => {
-            /* wwEditor:start */
-            return props.wwEditorState.isEditing;
-            /* wwEditor:end */
-            return false;
-        });
-
+    setup(props, { emit } ) {
+        const isEditing = computed(() => props.wwEditorState?.isEditing || false);
         const messagesContainer = ref(null);
         const textareaInput = ref(null);
         const fileInputElement = ref(null);
-
         const messages = ref([]);
         const inputText = ref('');
         const selectedFiles = ref([]);
         const isSending = ref(false);
         const sessionId = ref(null);
-
         const streamingMessageRef = ref(null);
         const streamBuffer = ref('');
 
@@ -140,128 +119,61 @@ export default {
         const statusText = computed(() => props.content?.statusText || 'online');
         const webhookUrl = computed(() => props.content?.webhookUrl || '');
         const clientId = computed(() => props.content?.clientId || 'cliente-demo-001');
-        const welcomeMessage = computed(() => props.content?.welcomeMessage || `Olá! Eu sou a ${brandName.value}. Envie uma mensagem ou anexe arquivos.`);
+        const welcomeMessage = computed(() => props.content?.welcomeMessage || `Olá! Eu sou a ${brandName.value}.`);
 
         const { value: messageHistory, setValue: setMessageHistory } = wwLib.wwVariable.useComponentVariable({
-            uid: props.uid,
-            name: 'messageHistory',
-            type: 'array',
-            defaultValue: []
+            uid: props.uid, name: 'messageHistory', type: 'array', defaultValue: []
+        });
+        const { setValue: setLastBotMessage } = wwLib.wwVariable.useComponentVariable({
+            uid: props.uid, name: 'lastBotMessage', type: 'string', defaultValue: ''
         });
 
-        const { value: lastBotMessage, setValue: setLastBotMessage } = wwLib.wwVariable.useComponentVariable({
-            uid: props.uid,
-            name: 'lastBotMessage',
-            type: 'string',
-            defaultValue: ''
-        });
+        marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false });
+        const renderMarkdown = (text) => text ? marked.parse(text) : '';
 
-        const generateSessionId = () => {
-            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-            return Math.random().toString(36).slice(2) + Date.now().toString(36);
-        };
-
+        const generateSessionId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
         const getTimeString = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const getFileExtension = (name, type) => name ? name.slice(name.lastIndexOf('.') + 1).toLowerCase().substring(0, 3) : (type?.split('/')[1] || 'file').substring(0, 3);
+        const scrollToBottom = () => nextTick(() => { if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight; });
 
-        const getFileExtension = (name, type) => {
-            if (name) {
-                const lastDot = name.lastIndexOf('.');
-                if (lastDot > -1) return name.slice(lastDot + 1).toLowerCase().substring(0, 3);
-            }
-            if (type) return (type.split('/')[1] || 'file').substring(0, 3);
-            return 'file';
-        };
-
-        const scrollToBottom = () => {
-            nextTick(() => {
-                if (messagesContainer.value) {
-                    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-                }
-            });
-        };
-
-        const addMessage = (text, type = 'bot', attachments = [], isTyping = false, isStreaming = false) => {
-            const message = {
-                text: text || '',
-                type,
-                time: getTimeString(),
-                attachments: attachments || [],
-                isTyping: isTyping || false,
-                isStreaming: isStreaming || false
-            };
+        const addMessage = (text, type = 'bot', attachments = [], isTyping = false) => {
+            const message = { text: text || '', type, time: getTimeString(), attachments: attachments || [], isTyping: isTyping || false };
             messages.value.push(message);
             scrollToBottom();
             return message;
         };
 
         const removeTypingIndicator = () => {
-            const typingIndex = messages.value.findIndex(m => m.isTyping);
-            if (typingIndex > -1) messages.value.splice(typingIndex, 1);
+            const idx = messages.value.findIndex(m => m.isTyping);
+            if (idx > -1) messages.value.splice(idx, 1);
         };
 
         const openFile = (url) => { if (!isEditing.value && url) window.open(url, '_blank'); };
         const triggerFileInput = () => { if (fileInputElement.value) fileInputElement.value.click(); };
-
-        const handleFileSelect = (event) => {
-            const files = Array.from(event.target.files);
-            files.forEach(file => {
-                const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
-                selectedFiles.value.push({ file, name: file.name, type: file.type, preview });
+        const handleFileSelect = (e) => {
+            Array.from(e.target.files).forEach(file => {
+                selectedFiles.value.push({ file, name: file.name, type: file.type, preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null });
             });
-            event.target.value = '';
+            e.target.value = '';
         };
-
-        const removeFile = (index) => {
-            const file = selectedFiles.value[index];
-            if (file.preview) URL.revokeObjectURL(file.preview);
-            selectedFiles.value.splice(index, 1);
+        const removeFile = (idx) => {
+            if (selectedFiles.value[idx].preview) URL.revokeObjectURL(selectedFiles.value[idx].preview);
+            selectedFiles.value.splice(idx, 1);
         };
-
         const updateTextareaHeight = () => {
             if (textareaInput.value) {
                 textareaInput.value.style.height = 'auto';
                 textareaInput.value.style.height = `${Math.min(textareaInput.value.scrollHeight, 160)}px`;
             }
         };
-
-        const handleKeydown = (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage();
-            }
-        };
-
-        const parseAndProcessChunks = (text) => {
-            streamBuffer.value += text;
-            let boundary;
-            while ((boundary = streamBuffer.value.indexOf('}{')) !== -1) {
-                const chunk = streamBuffer.value.slice(0, boundary + 1);
-                processSingleJSON(chunk);
-                streamBuffer.value = streamBuffer.value.slice(boundary + 1);
-            }
-            try {
-                const lastChunk = streamBuffer.value.trim();
-                if (lastChunk.startsWith('{') && lastChunk.endsWith('}')) {
-                    processSingleJSON(lastChunk);
-                    streamBuffer.value = '';
-                }
-            } catch (e) {}
-        };
+        const handleKeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
 
         const processSingleJSON = (jsonStr) => {
             try {
                 const data = JSON.parse(jsonStr);
-                if (data.type === 'begin') {
+                if (data.type === 'begin' || data.type === 'item') {
                     removeTypingIndicator();
-                    if (!streamingMessageRef.value) {
-                        streamingMessageRef.value = addMessage('', 'bot', [], false, true);
-                    }
-                } else if (data.type === 'item') {
-                    removeTypingIndicator();
-                    if (!streamingMessageRef.value) {
-                        streamingMessageRef.value = addMessage('', 'bot', [], false, true);
-                    }
-                    
+                    if (!streamingMessageRef.value) streamingMessageRef.value = addMessage('', 'bot');
                     if (data.content) {
                         if (data.metadata?.nodeName?.includes('AI Agent')) {
                             streamingMessageRef.value.text += data.content;
@@ -269,114 +181,89 @@ export default {
                             try {
                                 const parsed = JSON.parse(data.content);
                                 if (parsed.reply) streamingMessageRef.value.text = parsed.reply;
-                            } catch (e) {
-                                streamingMessageRef.value.text = data.content;
-                            }
+                            } catch (e) { streamingMessageRef.value.text = data.content; }
                         }
                         scrollToBottom();
                     }
-                } else if (data.type === 'end') {
-                    if (streamingMessageRef.value) {
-                        // Mark as no longer streaming when fully finished
-                        // Note: In some workflows there might be multiple begin/end pairs
-                    }
                 }
-            } catch (e) {
-                console.error('Erro ao processar JSON unitário:', e);
+            } catch (e) {}
+        };
+
+        const parseAndProcessChunks = (text) => {
+            streamBuffer.value += text;
+            let boundary;
+            while ((boundary = streamBuffer.value.indexOf('}{')) !== -1) {
+                processSingleJSON(streamBuffer.value.slice(0, boundary + 1));
+                streamBuffer.value = streamBuffer.value.slice(boundary + 1);
             }
+            try {
+                const last = streamBuffer.value.trim();
+                if (last.startsWith('{') && last.endsWith('}')) {
+                    processSingleJSON(last);
+                    streamBuffer.value = '';
+                }
+            } catch (e) {}
         };
 
         const sendMessage = async () => {
-            const messageText = inputText.value.trim();
-            if (!messageText && selectedFiles.value.length === 0) return;
+            const text = inputText.value.trim();
+            if (!text && selectedFiles.value.length === 0) return;
             if (isSending.value) return;
 
-            const currentFiles = [...selectedFiles.value];
-            const currentText = messageText;
-
+            const files = [...selectedFiles.value];
             inputText.value = '';
             selectedFiles.value = [];
             if (textareaInput.value) textareaInput.value.style.height = '20px';
 
-            addMessage(currentText, 'user', currentFiles.map(f => ({ name: f.name, type: f.type, url: f.preview })));
-            
-            emit('trigger-event', {
-                name: 'messageSent',
-                event: { text: currentText, files: currentFiles.map(f => f.file), sessionId: sessionId.value }
-            });
-
+            addMessage(text, 'user', files.map(f => ({ name: f.name, type: f.type, url: f.preview })));
             isSending.value = true;
-            addMessage('', 'bot', [], true); // Typing indicator
+            addMessage('', 'bot', [], true);
             streamingMessageRef.value = null;
             streamBuffer.value = '';
 
             try {
-                const formData = new FormData();
-                formData.append('message', currentText);
-                formData.append('sessionId', sessionId.value);
-                formData.append('clientId', clientId.value);
-                currentFiles.forEach(f => formData.append('files[]', f.file));
+                const fd = new FormData();
+                fd.append('message', text);
+                fd.append('sessionId', sessionId.value);
+                fd.append('clientId', clientId.value);
+                files.forEach(f => fd.append('files[]', f.file));
 
-                const response = await fetch(webhookUrl.value, { method: 'POST', body: formData });
-                if (!response.ok) throw new Error('Falha na conexão');
-
-                const reader = response.body.getReader();
+                const res = await fetch(webhookUrl.value, { method: 'POST', body: fd });
+                const reader = res.body.getReader();
                 const decoder = new TextDecoder();
-                
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    const chunkText = decoder.decode(value, { stream: true });
-                    parseAndProcessChunks(chunkText);
+                    parseAndProcessChunks(decoder.decode(value, { stream: true }));
                 }
 
                 if (streamingMessageRef.value) {
-                    streamingMessageRef.value.isStreaming = false;
-                    const finalBotText = streamingMessageRef.value.text;
-                    setLastBotMessage(finalBotText);
-                    const history = [...(messageHistory.value || [])];
-                    history.push({ text: currentText, type: 'user', timestamp: new Date().toISOString() });
-                    history.push({ text: finalBotText, type: 'bot', timestamp: new Date().toISOString() });
-                    setMessageHistory(history);
-                    emit('trigger-event', { name: 'messageReceived', event: { text: finalBotText, sessionId: sessionId.value } });
+                    const botText = streamingMessageRef.value.text;
+                    setLastBotMessage(botText);
+                    const hist = [...(messageHistory.value || [])];
+                    hist.push({ text, type: 'user', timestamp: new Date().toISOString() });
+                    hist.push({ text: botText, type: 'bot', timestamp: new Date().toISOString() });
+                    setMessageHistory(hist);
+                    emit('trigger-event', { name: 'messageReceived', event: { text: botText, sessionId: sessionId.value } });
                 }
-
-            } catch (error) {
+            } catch (err) {
                 removeTypingIndicator();
-                addMessage(`Erro: ${error?.message || 'Falha ao enviar'}`, 'bot');
+                addMessage(`Erro: ${err.message}`, 'bot');
             } finally {
                 isSending.value = false;
-                currentFiles.forEach(f => { if (f.preview) URL.revokeObjectURL(f.preview); });
+                files.forEach(f => f.preview && URL.revokeObjectURL(f.preview));
             }
-        };
-
-        const clearChat = () => {
-            messages.value = [];
-            setMessageHistory([]);
-            setLastBotMessage('');
-            if (welcomeMessage.value) addMessage(welcomeMessage.value, 'bot');
-        };
-
-        const addBotMessage = (text, attachments = []) => {
-            addMessage(text, 'bot', (attachments || []).map(att => ({
-                name: att.name || 'arquivo',
-                type: att.type || '',
-                url: att.url || null,
-                thumb: (att.type || '').startsWith('image/') ? att.url : null
-            })));
         };
 
         onMounted(() => {
             sessionId.value = generateSessionId();
             if (welcomeMessage.value) addMessage(welcomeMessage.value, 'bot');
-            if (textareaInput.value) textareaInput.value.style.height = '20px';
         });
 
         return {
-            isEditing, messagesContainer, textareaInput, fileInputElement, messages,
-            inputText, selectedFiles, isSending, brandName, brandInitial, brandColor,
-            statusText, getFileExtension, openFile, triggerFileInput, handleFileSelect,
-            removeFile, updateTextareaHeight, handleKeydown, sendMessage, clearChat, addBotMessage
+            isEditing, messagesContainer, textareaInput, fileInputElement, messages, inputText, selectedFiles, isSending,
+            brandName, brandInitial, brandColor, statusText, getFileExtension, openFile, triggerFileInput, handleFileSelect,
+            removeFile, updateTextareaHeight, handleKeydown, sendMessage, renderMarkdown
         };
     }
 };
@@ -424,22 +311,18 @@ export default {
 .bubble {
     max-width: 70ch; padding: 12px 14px; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.07) inset, 0 4px 8px var(--shadow-color); position: relative; border: 1px solid var(--bubble-border);
-    transition: all 0.2s ease;
     &.user { background: var(--bubble-user); color: #fff; border-top-right-radius: 6px; }
     &.bot { background: var(--bubble-bot); color: var(--text); border-top-left-radius: 6px; }
-    &.is-streaming { min-width: 80px; min-height: 44px; display: flex; align-items: center; }
 }
 
-.skeleton-loader {
-    width: 100%; display: flex; flex-direction: column; gap: 8px;
-    .skeleton-line {
-        height: 12px; background: linear-gradient(90deg, transparent 25%, rgba(150,150,150,0.1) 50%, transparent 75%);
-        background-size: 200% 100%; animation: skeleton-wave 1.5s infinite; border-radius: 4px; width: 140px;
-        &.short { width: 80px; }
-    }
+.markdown-content {
+    :deep(p) { margin: 0 0 8px 0; &:last-child { margin-bottom: 0; } }
+    :deep(strong) { font-weight: 700; }
+    :deep(em) { font-style: italic; }
+    :deep(a) { color: inherit; text-decoration: underline; }
+    :deep(ul), :deep(ol) { margin: 8px 0; padding-left: 20px; }
+    :deep(li) { margin-bottom: 4px; }
 }
-
-@keyframes skeleton-wave { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 .meta { display: block; font-size: 11px; opacity: 0.75; margin-top: 6px; }
 .typing { display: inline-flex; gap: 4px; align-items: center; span { width: 6px; height: 6px; background: var(--text); border-radius: 999px; animation: blink 1.2s infinite; opacity: 0.35; &:nth-child(2) { animation-delay: 0.15s; } &:nth-child(3) { animation-delay: 0.3s; } } }
