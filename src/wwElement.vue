@@ -27,7 +27,7 @@
                             <div v-if="message.attachments?.length" class="attach">
                                 <div v-for="(file, fileIndex) in message.attachments" :key="fileIndex" class="chip-file"
                                     :style="{ cursor: file.url ? 'pointer' : 'default' }"
-                                    :title="file.url ? 'Abrir arquivo' : ''" @click="file.url && openFile(file.url)">
+                                    @click="file.url && openFile(file.url)">
                                     <div v-if="!file.thumb" class="ext">
                                         {{ getFileExtension(file.name, file.type) }}
                                     </div>
@@ -55,18 +55,22 @@
 
             <div class="composer">
                 <div class="field">
-                    <label class="icon-btn" for="fileInput" role="button" tabindex="0" title="Anexar"
-                        @click="triggerFileInput" @keydown.enter="triggerFileInput">
+                    <label class="icon-btn" for="fileInput" @click="triggerFileInput">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                             <path fill="currentColor" fill-rule="evenodd"
                                 d="M2 12c0-4.714 0-7.071 1.464-8.536C4.93 2 7.286 2 12 2s7.071 0 8.535 1.464C22 4.93 22 7.286 22 12s0 7.071-1.465 8.535C19.072 22 16.714 22 12 22s-7.071 0-8.536-1.465C2 19.072 2 16.714 2 12m10 5.75a.75.75 0 0 0 .75-.75v-5.19l1.72 1.72a.75.75 0 1 0 1.06-1.06l-3-3a.75.75 0 0 0-1.06 0l-3 3a.75.75 0 1 0 1.06 1.06l1.72-1.72V17c0 .414.336.75.75.75m-4-10a.75.75 0 0 1 0-1.5h8a.75.75 0 0 1 0 1.5z"
                                 clip-rule="evenodd" />
                         </svg>
                     </label>
-                    <textarea ref="textareaInput" v-model="inputText" placeholder="Escreva sua mensagem…"
-                        @keydown="handleKeydown" @input="updateTextareaHeight"></textarea>
-                    <input ref="fileInputElement" type="file" multiple style="display: none"
-                        @change="handleFileSelect" />
+                    <textarea 
+                        ref="textareaInput" 
+                        v-model="inputText" 
+                        placeholder="Escreva sua mensagem..."
+                        rows="1"
+                        @keydown="handleKeydown" 
+                        @input="updateTextareaHeight"
+                    ></textarea>
+                    <input ref="fileInputElement" type="file" multiple style="display: none" @change="handleFileSelect" />
                 </div>
                 <button class="send-btn" type="button" :disabled="isSending" @click="sendMessage">
                     ➤
@@ -142,23 +146,36 @@ export default {
 
         const openFile = (url) => { if (!isEditing.value && url) window.open(url, '_blank'); };
         const triggerFileInput = () => { if (fileInputElement.value) fileInputElement.value.click(); };
+        
         const handleFileSelect = (e) => {
             Array.from(e.target.files).forEach(file => {
                 selectedFiles.value.push({ file, name: file.name, type: file.type, preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null });
             });
             e.target.value = '';
         };
+
         const removeFile = (idx) => {
             if (selectedFiles.value[idx].preview) URL.revokeObjectURL(selectedFiles.value[idx].preview);
             selectedFiles.value.splice(idx, 1);
         };
+
         const updateTextareaHeight = () => {
-            if (textareaInput.value) {
-                textareaInput.value.style.height = 'auto';
-                textareaInput.value.style.height = `${Math.min(textareaInput.value.scrollHeight, 160)}px`;
+            const el = textareaInput.value;
+            if (el) {
+                el.style.height = '24px'; // Reset para o mínimo
+                const newHeight = Math.min(el.scrollHeight, 160);
+                el.style.height = newHeight + 'px';
+                // Esconde a barra de rolagem se o texto for pequeno
+                el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden';
             }
         };
-        const handleKeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+
+        const handleKeydown = (e) => { 
+            if (e.key === 'Enter' && !e.shiftKey) { 
+                e.preventDefault(); 
+                sendMessage(); 
+            } 
+        };
 
         const processSingleJSON = (jsonStr) => {
             try {
@@ -205,7 +222,11 @@ export default {
             const files = [...selectedFiles.value];
             inputText.value = '';
             selectedFiles.value = [];
-            if (textareaInput.value) textareaInput.value.style.height = '20px';
+            
+            if (textareaInput.value) {
+                textareaInput.value.style.height = '24px';
+                textareaInput.value.style.overflowY = 'hidden';
+            }
 
             addMessage(text, 'user', files.map(f => ({ name: f.name, type: f.type, url: f.preview })));
             isSending.value = true;
@@ -263,12 +284,8 @@ export default {
 
 <style lang="scss" scoped>
 .looply-chat-app {
-    --stone-50: #fafaf9; --stone-100: #f5f5f4; --stone-200: #e7e5e4; --stone-300: #d6d3d1;
-    --stone-400: #a8a29e; --stone-500: #78716c; --stone-600: #57534e; --stone-700: #44403c;
-    --stone-800: #292524; --stone-900: #1c1917; --stone-950: #0c0a09;
-    --red-50: #fef2f2; --red-100: #fee2e2; --red-200: #fecaca; --red-300: #fca5a5;
-    --red-400: #f87171; --red-500: #ef4444; --red-600: #dc2626; --red-700: #b91c1c;
-    --red-800: #991b1b; --red-900: #7f1d1d; --red-950: #450a0a;
+    --stone-50: #fafaf9; --stone-200: #e7e5e4; --stone-300: #d6d3d1; --stone-500: #78716c; --stone-700: #44403c; --stone-800: #292524; --stone-900: #1c1917; --stone-950: #0c0a09;
+    --red-100: #fee2e2; --red-500: #ef4444; --red-700: #b91c1c; --red-900: #7f1d1d;
 
     --bg: v-bind('content?.theme === "dark" ? "var(--stone-950)" : "var(--stone-50)"');
     --panel: v-bind('content?.theme === "dark" ? "var(--stone-900)" : "var(--stone-100)"');
@@ -312,10 +329,6 @@ export default {
     display: block;
     :deep(p) { margin: 0 !important; line-height: 1.45; }
     :deep(p + p) { margin-top: 8px !important; }
-    :deep(ul), :deep(ol) { margin: 8px 0 8px 20px !important; }
-    :deep(li) { margin-bottom: 4px !important; }
-    :deep(strong) { font-weight: 700; }
-    :deep(a) { color: inherit; text-decoration: underline; }
 }
 
 .meta { display: block; font-size: 11px; opacity: 0.7; margin-top: 4px; line-height: 1; }
@@ -326,17 +339,68 @@ export default {
 .attach { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
 .chip-file {
     display: flex; align-items: center; gap: 8px; background: var(--chip-bg); color: var(--chip-fg); border: 1px solid var(--bubble-border); border-radius: 10px; padding: 6px 8px; font-size: 12px;
-    .ext { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: rgba(0, 0, 0, 0.06); color: inherit; font-weight: 700; text-transform: uppercase; font-size: 10px; }
-    .name { max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
-.composer { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--panel); border-top: 1px solid var(--bubble-border); }
-.field { flex: 1; display: flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--bubble-border); border-radius: 14px; padding: 8px;
-    textarea { flex: 1; background: transparent; border: none; outline: none; color: var(--text); padding: 2px; font-size: 14px; resize: none; height: 20px; min-height: 20px; max-height: 160px; overflow: auto; line-height: 1.4; font-family: inherit; }
+/* --- CORREÇÕES DO COMPOSER (TEXTAREA) --- */
+.composer { 
+    display: flex; 
+    align-items: flex-end; /* Alinha o botão de enviar na base se o texto crescer */
+    gap: 10px; 
+    padding: 12px; 
+    background: var(--panel); 
+    border-top: 1px solid var(--bubble-border); 
 }
-.icon-btn, .send-btn { appearance: none; border: none; outline: none; cursor: pointer; display: grid; place-items: center; }
-.icon-btn { background: var(--bubble-bot); width: 36px; height: 36px; border-radius: 10px; color: var(--stone-500); flex-shrink: 0; svg { width: 20px; height: 20px; } }
-.send-btn { background: var(--accent); color: #fff; width: 42px; height: 42px; border-radius: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; &:disabled { opacity: 0.5; cursor: not-allowed; } }
+
+.field { 
+    flex: 1; 
+    display: flex; 
+    align-items: center; /* Mantém ícone e textarea centralizados verticalmente entre si */
+    gap: 10px; 
+    background: var(--bg); 
+    border: 1px solid var(--bubble-border); 
+    border-radius: 18px; 
+    padding: 8px 12px;
+    min-height: 44px; /* Garante altura mínima para centralização */
+    box-sizing: border-box;
+
+    textarea { 
+        flex: 1; 
+        background: transparent; 
+        border: none; 
+        outline: none; 
+        color: var(--text); 
+        padding: 0; 
+        font-size: 15px; 
+        resize: none; 
+        height: 24px; /* Altura de uma linha */
+        max-height: 160px; 
+        overflow-y: hidden; /* Esconde a barra por padrão */
+        line-height: 24px; /* Alinha o texto verticalmente na linha */
+        font-family: inherit;
+        display: block;
+
+        &::placeholder {
+            line-height: 24px;
+            color: var(--stone-500);
+        }
+    }
+}
+
+.icon-btn { 
+    background: transparent; 
+    color: var(--stone-500); 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    cursor: pointer;
+    svg { width: 22px; height: 22px; }
+}
+
+.send-btn { 
+    background: var(--accent); color: #fff; width: 44px; height: 44px; border-radius: 14px; border:none; cursor:pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; 
+    &:disabled { opacity: 0.5; cursor: not-allowed; } 
+}
 
 .files { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 16px; background: var(--panel); border-top: 1px solid var(--bubble-border); }
 .file { display: flex; align-items: center; gap: 8px; border: 1px solid var(--bubble-border); background: var(--bg); border-radius: 10px; padding: 6px 8px; font-size: 12px; color: var(--text); img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; } .x { cursor: pointer; opacity: 0.75; margin-left: 4px; &:hover { opacity: 1; } } }
