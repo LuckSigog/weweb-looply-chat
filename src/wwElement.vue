@@ -257,6 +257,84 @@ export default {
             }
         };
 
+        const processStreamingData = (input) => {
+            if (!input || input === lastProcessedStreamInput.value) return;
+            
+            // Check if it's actually a streaming JSON format
+            if (!input.trim().startsWith('{"type":')) return false;
+            
+            lastProcessedStreamInput.value = input;
+
+            try {
+                // Handle multiple JSON objects in the same string (common in some stream implementations)
+                // Using a more robust regex to split JSON objects
+                const chunks = input.match(/\{"type":.*?\}(?=\s*\{"type":|$)/g) || [input];
+
+                for (const chunk of chunks) {
+                    try {
+                        const data = JSON.parse(chunk);
+
+                        if (data.type === 'begin') {
+                            removeTypingIndicator();
+                            // If we don't have a message ref yet, create one
+                            if (!streamingMessageRef.value) {
+                                streamingMessageRef.value = addMessage('', 'bot');
+                            } else {
+                                // If we already have one, clear it for the new node
+                                streamingMessageRef.value.text = '';
+                            }
+                        }
+                        else if (data.type === 'item') {
+                            removeTypingIndicator();
+                            if (!streamingMessageRef.value) {
+                                streamingMessageRef.value = addMessage('', 'bot');
+                            }
+                            
+                            // If it's a direct content string from AI Agent
+                            if (data.content && data.metadata?.nodeName?.includes('AI Agent')) {
+                                streamingMessageRef.value.text += data.content;
+                                scrollToBottom();
+                            }
+                            // If it's the final JSON reply
+                            else if (data.metadata?.nodeName?.includes('Return JSON')) {
+                                try {
+                                    const parsed = JSON.parse(data.content);
+                                    if (parsed.reply) {
+                                        streamingMessageRef.value.text = parsed.reply;
+                                        scrollToBottom();
+                                    }
+                                } catch (e) {
+                                    // If content is just a string in Return JSON, use it
+                                    if (data.content) {
+                                        streamingMessageRef.value.text = data.content;
+                                        scrollToBottom();
+                                    }
+                                }
+                            }
+                        }
+                        else if (data.type === 'end') {
+                            if (streamingMessageRef.value) {
+                                const finalBotText = streamingMessageRef.value.text;
+                                if (finalBotText) {
+                                    setLastBotMessage(finalBotText);
+
+                                    // Update history only if it's the final end of the whole process
+                                    // or if we want to save intermediate steps. 
+                                    // For now, let's just keep the UI updated.
+                                }
+                            }
+                        }
+                    } catch (chunkError) {
+                        console.error('Error parsing chunk:', chunkError);
+                    }
+                }
+                return true; // Successfully processed as stream
+            } catch (e) {
+                console.error('Error in processStreamingData:', e);
+                return false;
+            }
+        };
+
         const sendMessage = async () => {
             const messageText = inputText.value.trim();
             if (!messageText && selectedFiles.value.length === 0) return;
@@ -289,6 +367,7 @@ export default {
 
             isSending.value = true;
             addMessage('', 'bot', [], true); // Typing indicator
+            streamingMessageRef.value = null; // Reset stream ref
 
             try {
                 const formData = new FormData();
@@ -306,44 +385,67 @@ export default {
 
                 if (!response.ok) throw new Error('Network response was not ok');
 
-                const contentType = response.headers.get('content-type') || '';
-                let data;
-
-                if (contentType.includes('application/json')) {
-                    data = await response.json();
-                } else {
-                    data = { reply: await response.text() };
-                }
-
-                removeTypingIndicator();
-
-                const botText = (data?.reply || '').toString();
-                const botAttachments = Array.isArray(data?.attachments)
-                    ? data.attachments.map(att => ({
-                        name: att.name || 'arquivo',
-                        type: att.type || '',
-                        url: att.url || null,
-                        thumb: (att.type || '').startsWith('image/') ? att.url : null
-                    }))
-                    : [];
-
-                addMessage(botText, 'bot', botAttachments);
-                setLastBotMessage(botText);
-
-                // Update history
-                const history = [...(messageHistory.value || [])];
-                history.push({ text: currentText, type: 'user', timestamp: new Date().toISOString() });
-                history.push({ text: botText, type: 'bot', timestamp: new Date().toISOString() });
-                setMessageHistory(history);
-
-                emit('trigger-event', {
-                    name: 'messageReceived',
-                    event: {
-                        text: botText,
-                        attachments: botAttachments,
-                        sessionId: sessionId.value
+                const responseText = await response.text();
+                
+                // Try to process as stream first
+                const wasStream = processStreamingData(responseText);
+                
+                if (!wasStream) {
+                    // If not a stream, process as normal JSON or text
+                    removeTypingIndicator();
+                    let data;
+                    try {
+                        data = JSON.parse(responseText);
+                    } catch (e) {
+                        data = { reply: responseText };
                     }
-                });
+
+                    const botText = (data?.reply || '').toString();
+                    const botAttachments = Array.isArray(data?.attachments)
+                        ? data.attachments.map(att => ({
+                            name: att.name || 'arquivo',
+                            type: att.type || '',
+                            url: att.url || null,
+                            thumb: (att.type || '').startsWith('image/') ? att.url : null
+                        }))
+                        : [];
+
+                    addMessage(botText, 'bot', botAttachments);
+                    setLastBotMessage(botText);
+
+                    // Update history
+                    const history = [...(messageHistory.value || [])];
+                    history.push({ text: currentText, type: 'user', timestamp: new Date().toISOString() });
+                    history.push({ text: botText, type: 'bot', timestamp: new Date().toISOString() });
+                    setMessageHistory(history);
+
+                    emit('trigger-event', {
+                        name: 'messageReceived',
+                        event: {
+                            text: botText,
+                            attachments: botAttachments,
+                            sessionId: sessionId.value
+                        }
+                    });
+                } else {
+                    // It was a stream, the messages are already added by processStreamingData
+                    // Just update the history with the final result
+                    if (streamingMessageRef.value) {
+                        const finalBotText = streamingMessageRef.value.text;
+                        const history = [...(messageHistory.value || [])];
+                        history.push({ text: currentText, type: 'user', timestamp: new Date().toISOString() });
+                        history.push({ text: finalBotText, type: 'bot', timestamp: new Date().toISOString() });
+                        setMessageHistory(history);
+                        
+                        emit('trigger-event', {
+                            name: 'messageReceived',
+                            event: {
+                                text: finalBotText,
+                                sessionId: sessionId.value
+                            }
+                        });
+                    }
+                }
 
             } catch (error) {
                 removeTypingIndicator();
@@ -362,79 +464,6 @@ export default {
                 currentFiles.forEach(f => {
                     if (f.preview) URL.revokeObjectURL(f.preview);
                 });
-            }
-        };
-
-        const processStreamingData = (input) => {
-            if (!input || input === lastProcessedStreamInput.value) return;
-            lastProcessedStreamInput.value = input;
-
-            try {
-                // Handle multiple JSON objects in the same string (common in some stream implementations)
-                const chunks = input.split('} {').map((s, i, a) => {
-                    if (a.length === 1) return s;
-                    if (i === 0) return s + '}';
-                    if (i === a.length - 1) return '{' + s;
-                    return '{' + s + '}';
-                });
-
-                for (const chunk of chunks) {
-                    const data = JSON.parse(chunk);
-
-                    if (data.type === 'begin') {
-                        removeTypingIndicator();
-                        // Create a new bot message that we will update
-                        streamingMessageRef.value = addMessage('', 'bot');
-                    }
-                    else if (data.type === 'item') {
-                        if (streamingMessageRef.value) {
-                            // If it's a direct content string
-                            if (data.content && !data.metadata?.nodeName?.includes('Return JSON')) {
-                                streamingMessageRef.value.text += data.content;
-                                scrollToBottom();
-                            }
-                            // If it's the final JSON reply
-                            else if (data.metadata?.nodeName?.includes('Return JSON')) {
-                                try {
-                                    const parsed = JSON.parse(data.content);
-                                    if (parsed.reply) {
-                                        streamingMessageRef.value.text = parsed.reply;
-                                        scrollToBottom();
-                                    }
-                                } catch (e) {
-                                    // Not a JSON or different format, ignore
-                                }
-                            }
-                        }
-                    }
-                    else if (data.type === 'end') {
-                        if (streamingMessageRef.value) {
-                            const finalBotText = streamingMessageRef.value.text;
-                            setLastBotMessage(finalBotText);
-
-                            // Update history
-                            const history = [...(messageHistory.value || [])];
-                            history.push({
-                                text: finalBotText,
-                                type: 'bot',
-                                timestamp: new Date().toISOString()
-                            });
-                            setMessageHistory(history);
-
-                            emit('trigger-event', {
-                                name: 'messageReceived',
-                                event: {
-                                    text: finalBotText,
-                                    sessionId: sessionId.value
-                                }
-                            });
-
-                            streamingMessageRef.value = null;
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('Error parsing streaming chunk:', e);
             }
         };
 
@@ -468,7 +497,7 @@ export default {
             }
         });
 
-        // Watch for streaming input
+        // Watch for external streaming input (e.g. from WeWeb variable)
         watch(() => props.content?.streamingInput, (newValue) => {
             if (props.content?.streamingEnabled && newValue) {
                 processStreamingData(newValue);
@@ -504,6 +533,7 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+/* Estilos permanecem os mesmos */
 .looply-chat-app {
     --stone-50: #fafaf9;
     --stone-100: #f5f5f4;
