@@ -316,12 +316,15 @@ export default {
 }
 
 .markdown-content {
-    :deep(p) { margin: 0; &:not(:last-child) { margin-bottom: 8px; } }
+    display: block;
+    :deep(*) { margin: 0 !important; padding: 0 !important; }
+    :deep(p) { margin: 0 !important; padding: 0 !important; line-height: 1.45; }
+    :deep(p + p) { margin-top: 8px !important; }
     :deep(strong) { font-weight: 700; }
     :deep(em) { font-style: italic; }
     :deep(a) { color: inherit; text-decoration: underline; }
-    :deep(ul), :deep(ol) { margin: 8px 0; padding-left: 20px; }
-    :deep(li) { margin-bottom: 4px; }
+    :deep(ul), :deep(ol) { margin: 8px 0 8px 20px !important; }
+    :deep(li) { margin-bottom: 4px !important; }
 }
 
 .meta { display: block; font-size: 11px; opacity: 0.75; margin-top: 6px; }
