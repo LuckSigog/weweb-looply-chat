@@ -112,27 +112,22 @@ export default {
             /* wwEditor:start */
             return props.wwEditorState.isEditing;
             /* wwEditor:end */
-            // eslint-disable-next-line no-unreachable
             return false;
         });
 
-        // Refs
         const messagesContainer = ref(null);
         const textareaInput = ref(null);
         const fileInputElement = ref(null);
 
-        // State
         const messages = ref([]);
         const inputText = ref('');
         const selectedFiles = ref([]);
         const isSending = ref(false);
         const sessionId = ref(null);
 
-        // Streaming State
         const streamingMessageRef = ref(null);
-        const lastProcessedStreamInput = ref('');
+        const streamBuffer = ref('');
 
-        // Computed
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
         const brandInitial = computed(() => (props.content?.brandName || 'L').charAt(0).toUpperCase());
         const brandColor = computed(() => props.content?.brandColor || '#ef4444');
@@ -141,7 +136,6 @@ export default {
         const clientId = computed(() => props.content?.clientId || 'cliente-demo-001');
         const welcomeMessage = computed(() => props.content?.welcomeMessage || `Olá! Eu sou a ${brandName.value}. Envie uma mensagem ou anexe arquivos.`);
 
-        // Internal variables
         const { value: messageHistory, setValue: setMessageHistory } = wwLib.wwVariable.useComponentVariable({
             uid: props.uid,
             name: 'messageHistory',
@@ -156,29 +150,19 @@ export default {
             defaultValue: ''
         });
 
-        // Methods
         const generateSessionId = () => {
-            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-                return crypto.randomUUID();
-            }
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
             return Math.random().toString(36).slice(2) + Date.now().toString(36);
         };
 
-        const getTimeString = () => {
-            return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        };
+        const getTimeString = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
         const getFileExtension = (name, type) => {
             if (name) {
                 const lastDot = name.lastIndexOf('.');
-                if (lastDot > -1) {
-                    return name.slice(lastDot + 1).toLowerCase().substring(0, 3);
-                }
+                if (lastDot > -1) return name.slice(lastDot + 1).toLowerCase().substring(0, 3);
             }
-            if (type) {
-                const parts = type.split('/');
-                return (parts[1] || 'file').substring(0, 3);
-            }
+            if (type) return (type.split('/')[1] || 'file').substring(0, 3);
             return 'file';
         };
 
@@ -205,34 +189,17 @@ export default {
 
         const removeTypingIndicator = () => {
             const typingIndex = messages.value.findIndex(m => m.isTyping);
-            if (typingIndex > -1) {
-                messages.value.splice(typingIndex, 1);
-            }
+            if (typingIndex > -1) messages.value.splice(typingIndex, 1);
         };
 
-        const openFile = (url) => {
-            if (isEditing.value) return;
-            if (url) {
-                window.open(url, '_blank');
-            }
-        };
-
-        const triggerFileInput = () => {
-            if (fileInputElement.value) {
-                fileInputElement.value.click();
-            }
-        };
+        const openFile = (url) => { if (!isEditing.value && url) window.open(url, '_blank'); };
+        const triggerFileInput = () => { if (fileInputElement.value) fileInputElement.value.click(); };
 
         const handleFileSelect = (event) => {
             const files = Array.from(event.target.files);
             files.forEach(file => {
                 const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
-                selectedFiles.value.push({
-                    file,
-                    name: file.name,
-                    type: file.type,
-                    preview
-                });
+                selectedFiles.value.push({ file, name: file.name, type: file.type, preview });
             });
             event.target.value = '';
         };
@@ -257,81 +224,59 @@ export default {
             }
         };
 
-        const processStreamingData = (input) => {
-            if (!input || input === lastProcessedStreamInput.value) return;
+        const parseAndProcessChunks = (text) => {
+            streamBuffer.value += text;
             
-            // Check if it's actually a streaming JSON format
-            if (!input.trim().startsWith('{"type":')) return false;
+            // Regex para encontrar objetos JSON completos {"type":...}
+            let boundary;
+            while ((boundary = streamBuffer.value.indexOf('}{')) !== -1) {
+                const chunk = streamBuffer.value.slice(0, boundary + 1);
+                processSingleJSON(chunk);
+                streamBuffer.value = streamBuffer.value.slice(boundary + 1);
+            }
             
-            lastProcessedStreamInput.value = input;
-
+            // Tenta processar o que sobrou se for um JSON válido completo
             try {
-                // Handle multiple JSON objects in the same string (common in some stream implementations)
-                // Using a more robust regex to split JSON objects
-                const chunks = input.match(/\{"type":.*?\}(?=\s*\{"type":|$)/g) || [input];
-
-                for (const chunk of chunks) {
-                    try {
-                        const data = JSON.parse(chunk);
-
-                        if (data.type === 'begin') {
-                            removeTypingIndicator();
-                            // If we don't have a message ref yet, create one
-                            if (!streamingMessageRef.value) {
-                                streamingMessageRef.value = addMessage('', 'bot');
-                            } else {
-                                // If we already have one, clear it for the new node
-                                streamingMessageRef.value.text = '';
-                            }
-                        }
-                        else if (data.type === 'item') {
-                            removeTypingIndicator();
-                            if (!streamingMessageRef.value) {
-                                streamingMessageRef.value = addMessage('', 'bot');
-                            }
-                            
-                            // If it's a direct content string from AI Agent
-                            if (data.content && data.metadata?.nodeName?.includes('AI Agent')) {
-                                streamingMessageRef.value.text += data.content;
-                                scrollToBottom();
-                            }
-                            // If it's the final JSON reply
-                            else if (data.metadata?.nodeName?.includes('Return JSON')) {
-                                try {
-                                    const parsed = JSON.parse(data.content);
-                                    if (parsed.reply) {
-                                        streamingMessageRef.value.text = parsed.reply;
-                                        scrollToBottom();
-                                    }
-                                } catch (e) {
-                                    // If content is just a string in Return JSON, use it
-                                    if (data.content) {
-                                        streamingMessageRef.value.text = data.content;
-                                        scrollToBottom();
-                                    }
-                                }
-                            }
-                        }
-                        else if (data.type === 'end') {
-                            if (streamingMessageRef.value) {
-                                const finalBotText = streamingMessageRef.value.text;
-                                if (finalBotText) {
-                                    setLastBotMessage(finalBotText);
-
-                                    // Update history only if it's the final end of the whole process
-                                    // or if we want to save intermediate steps. 
-                                    // For now, let's just keep the UI updated.
-                                }
-                            }
-                        }
-                    } catch (chunkError) {
-                        console.error('Error parsing chunk:', chunkError);
-                    }
+                const lastChunk = streamBuffer.value.trim();
+                if (lastChunk.startsWith('{') && lastChunk.endsWith('}')) {
+                    processSingleJSON(lastChunk);
+                    streamBuffer.value = '';
                 }
-                return true; // Successfully processed as stream
             } catch (e) {
-                console.error('Error in processStreamingData:', e);
-                return false;
+                // Ainda incompleto, aguarda próximo chunk
+            }
+        };
+
+        const processSingleJSON = (jsonStr) => {
+            try {
+                const data = JSON.parse(jsonStr);
+                if (data.type === 'begin') {
+                    removeTypingIndicator();
+                    if (!streamingMessageRef.value) {
+                        streamingMessageRef.value = addMessage('', 'bot');
+                    }
+                } else if (data.type === 'item') {
+                    removeTypingIndicator();
+                    if (!streamingMessageRef.value) streamingMessageRef.value = addMessage('', 'bot');
+                    
+                    if (data.content) {
+                        if (data.metadata?.nodeName?.includes('AI Agent')) {
+                            streamingMessageRef.value.text += data.content;
+                        } else if (data.metadata?.nodeName?.includes('Return JSON')) {
+                            try {
+                                const parsed = JSON.parse(data.content);
+                                if (parsed.reply) streamingMessageRef.value.text = parsed.reply;
+                            } catch (e) {
+                                streamingMessageRef.value.text = data.content;
+                            }
+                        }
+                        scrollToBottom();
+                    }
+                } else if (data.type === 'end') {
+                    // Finaliza mas mantém a referência para o próximo nó se houver
+                }
+            } catch (e) {
+                console.error('Erro ao processar JSON unitário:', e);
             }
         };
 
@@ -343,127 +288,60 @@ export default {
             const currentFiles = [...selectedFiles.value];
             const currentText = messageText;
 
-            // Reset UI
             inputText.value = '';
             selectedFiles.value = [];
             if (textareaInput.value) textareaInput.value.style.height = '20px';
 
-            // Add user message
-            const userAttachments = currentFiles.map(f => ({
-                name: f.name,
-                type: f.type,
-                url: f.preview
-            }));
-            addMessage(currentText, 'user', userAttachments);
-
+            addMessage(currentText, 'user', currentFiles.map(f => ({ name: f.name, type: f.type, url: f.preview })));
+            
             emit('trigger-event', {
                 name: 'messageSent',
-                event: {
-                    text: currentText,
-                    files: currentFiles.map(f => f.file),
-                    sessionId: sessionId.value
-                }
+                event: { text: currentText, files: currentFiles.map(f => f.file), sessionId: sessionId.value }
             });
 
             isSending.value = true;
-            addMessage('', 'bot', [], true); // Typing indicator
-            streamingMessageRef.value = null; // Reset stream ref
+            addMessage('', 'bot', [], true); // Indicador de digitando
+            streamingMessageRef.value = null;
+            streamBuffer.value = '';
 
             try {
                 const formData = new FormData();
                 formData.append('message', currentText);
                 formData.append('sessionId', sessionId.value);
                 formData.append('clientId', clientId.value);
-                currentFiles.forEach(f => {
-                    formData.append('files[]', f.file);
-                });
+                currentFiles.forEach(f => formData.append('files[]', f.file));
 
-                const response = await fetch(webhookUrl.value, {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch(webhookUrl.value, { method: 'POST', body: formData });
+                if (!response.ok) throw new Error('Falha na conexão');
 
-                if (!response.ok) throw new Error('Network response was not ok');
-
-                const responseText = await response.text();
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
                 
-                // Try to process as stream first
-                const wasStream = processStreamingData(responseText);
-                
-                if (!wasStream) {
-                    // If not a stream, process as normal JSON or text
-                    removeTypingIndicator();
-                    let data;
-                    try {
-                        data = JSON.parse(responseText);
-                    } catch (e) {
-                        data = { reply: responseText };
-                    }
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunkText = decoder.decode(value, { stream: true });
+                    parseAndProcessChunks(chunkText);
+                }
 
-                    const botText = (data?.reply || '').toString();
-                    const botAttachments = Array.isArray(data?.attachments)
-                        ? data.attachments.map(att => ({
-                            name: att.name || 'arquivo',
-                            type: att.type || '',
-                            url: att.url || null,
-                            thumb: (att.type || '').startsWith('image/') ? att.url : null
-                        }))
-                        : [];
-
-                    addMessage(botText, 'bot', botAttachments);
-                    setLastBotMessage(botText);
-
-                    // Update history
+                // Finalização
+                if (streamingMessageRef.value) {
+                    const finalBotText = streamingMessageRef.value.text;
+                    setLastBotMessage(finalBotText);
                     const history = [...(messageHistory.value || [])];
                     history.push({ text: currentText, type: 'user', timestamp: new Date().toISOString() });
-                    history.push({ text: botText, type: 'bot', timestamp: new Date().toISOString() });
+                    history.push({ text: finalBotText, type: 'bot', timestamp: new Date().toISOString() });
                     setMessageHistory(history);
-
-                    emit('trigger-event', {
-                        name: 'messageReceived',
-                        event: {
-                            text: botText,
-                            attachments: botAttachments,
-                            sessionId: sessionId.value
-                        }
-                    });
-                } else {
-                    // It was a stream, the messages are already added by processStreamingData
-                    // Just update the history with the final result
-                    if (streamingMessageRef.value) {
-                        const finalBotText = streamingMessageRef.value.text;
-                        const history = [...(messageHistory.value || [])];
-                        history.push({ text: currentText, type: 'user', timestamp: new Date().toISOString() });
-                        history.push({ text: finalBotText, type: 'bot', timestamp: new Date().toISOString() });
-                        setMessageHistory(history);
-                        
-                        emit('trigger-event', {
-                            name: 'messageReceived',
-                            event: {
-                                text: finalBotText,
-                                sessionId: sessionId.value
-                            }
-                        });
-                    }
+                    emit('trigger-event', { name: 'messageReceived', event: { text: finalBotText, sessionId: sessionId.value } });
                 }
 
             } catch (error) {
                 removeTypingIndicator();
-                const errorMessage = `Erro: ${error?.message || 'Falha ao enviar mensagem'}`;
-                addMessage(errorMessage, 'bot');
-
-                emit('trigger-event', {
-                    name: 'error',
-                    event: {
-                        message: errorMessage,
-                        sessionId: sessionId.value
-                    }
-                });
+                addMessage(`Erro: ${error?.message || 'Falha ao enviar'}`, 'bot');
             } finally {
                 isSending.value = false;
-                currentFiles.forEach(f => {
-                    if (f.preview) URL.revokeObjectURL(f.preview);
-                });
+                currentFiles.forEach(f => { if (f.preview) URL.revokeObjectURL(f.preview); });
             }
         };
 
@@ -471,92 +349,42 @@ export default {
             messages.value = [];
             setMessageHistory([]);
             setLastBotMessage('');
-            if (welcomeMessage.value) {
-                addMessage(welcomeMessage.value, 'bot');
-            }
+            if (welcomeMessage.value) addMessage(welcomeMessage.value, 'bot');
         };
 
         const addBotMessage = (text, attachments = []) => {
-            const processedAttachments = (attachments || []).map(att => ({
+            addMessage(text, 'bot', (attachments || []).map(att => ({
                 name: att.name || 'arquivo',
                 type: att.type || '',
                 url: att.url || null,
                 thumb: (att.type || '').startsWith('image/') ? att.url : null
-            }));
-            addMessage(text, 'bot', processedAttachments);
+            })));
         };
 
-        // Initialize
         onMounted(() => {
             sessionId.value = generateSessionId();
-            if (welcomeMessage.value) {
-                addMessage(welcomeMessage.value, 'bot');
-            }
-            if (textareaInput.value) {
-                textareaInput.value.style.height = '20px';
-            }
-        });
-
-        // Watch for external streaming input (e.g. from WeWeb variable)
-        watch(() => props.content?.streamingInput, (newValue) => {
-            if (props.content?.streamingEnabled && newValue) {
-                processStreamingData(newValue);
-            }
+            if (welcomeMessage.value) addMessage(welcomeMessage.value, 'bot');
+            if (textareaInput.value) textareaInput.value.style.height = '20px';
         });
 
         return {
-            isEditing,
-            messagesContainer,
-            textareaInput,
-            fileInputElement,
-            messages,
-            inputText,
-            selectedFiles,
-            isSending,
-            brandName,
-            brandInitial,
-            brandColor,
-            statusText,
-            getFileExtension,
-            openFile,
-            triggerFileInput,
-            handleFileSelect,
-            removeFile,
-            updateTextareaHeight,
-            handleKeydown,
-            sendMessage,
-            clearChat,
-            addBotMessage
+            isEditing, messagesContainer, textareaInput, fileInputElement, messages,
+            inputText, selectedFiles, isSending, brandName, brandInitial, brandColor,
+            statusText, getFileExtension, openFile, triggerFileInput, handleFileSelect,
+            removeFile, updateTextareaHeight, handleKeydown, sendMessage, clearChat, addBotMessage
         };
     }
 };
 </script>
 
 <style lang="scss" scoped>
-/* Estilos permanecem os mesmos */
 .looply-chat-app {
-    --stone-50: #fafaf9;
-    --stone-100: #f5f5f4;
-    --stone-200: #e7e5e4;
-    --stone-300: #d6d3d1;
-    --stone-400: #a8a29e;
-    --stone-500: #78716c;
-    --stone-600: #57534e;
-    --stone-700: #44403c;
-    --stone-800: #292524;
-    --stone-900: #1c1917;
-    --stone-950: #0c0a09;
-    --red-50: #fef2f2;
-    --red-100: #fee2e2;
-    --red-200: #fecaca;
-    --red-300: #fca5a5;
-    --red-400: #f87171;
-    --red-500: #ef4444;
-    --red-600: #dc2626;
-    --red-700: #b91c1c;
-    --red-800: #991b1b;
-    --red-900: #7f1d1d;
-    --red-950: #450a0a;
+    --stone-50: #fafaf9; --stone-100: #f5f5f4; --stone-200: #e7e5e4; --stone-300: #d6d3d1;
+    --stone-400: #a8a29e; --stone-500: #78716c; --stone-600: #57534e; --stone-700: #44403c;
+    --stone-800: #292524; --stone-900: #1c1917; --stone-950: #0c0a09;
+    --red-50: #fef2f2; --red-100: #fee2e2; --red-200: #fecaca; --red-300: #fca5a5;
+    --red-400: #f87171; --red-500: #ef4444; --red-600: #dc2626; --red-700: #b91c1c;
+    --red-800: #991b1b; --red-900: #7f1d1d; --red-950: #450a0a;
 
     --bg: v-bind('content?.theme === "dark" ? "var(--stone-950)" : "var(--stone-50)"');
     --panel: v-bind('content?.theme === "dark" ? "var(--stone-900)" : "var(--stone-100)"');
@@ -571,322 +399,50 @@ export default {
     --chip-fg: v-bind('content?.theme === "dark" ? "var(--stone-200)" : "var(--stone-800)"');
     --shadow-color: v-bind('content?.theme === "dark" ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.08)"');
 
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-    padding: 16px;
+    width: 100%; height: 100%; box-sizing: border-box; padding: 16px;
 }
 
 .chat-card {
-    display: grid;
-    grid-template-rows: auto 1fr auto auto;
-    height: 100%;
-    border-radius: 16px;
-    overflow: hidden;
-    background: var(--panel);
-    border: 1px solid var(--bubble-border);
-    box-shadow: 0 4px 12px var(--shadow-color);
+    display: grid; grid-template-rows: auto 1fr auto auto; height: 100%;
+    border-radius: 16px; overflow: hidden; background: var(--panel);
+    border: 1px solid var(--bubble-border); box-shadow: 0 4px 12px var(--shadow-color);
 }
 
-.header {
-    padding: 16px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--bubble-border);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
+.header { padding: 16px; background: var(--panel); border-bottom: 1px solid var(--bubble-border); display: flex; align-items: center; gap: 12px; }
+.brand-logo { width: 36px; height: 36px; border-radius: 999px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 18px; }
+.brand-name { font-weight: 700; font-size: 16px; color: var(--text); }
+.status { margin-left: auto; font-size: 12px; padding: 4px 8px; border-radius: 999px; background: var(--status-bg); color: var(--status-text); }
 
-.brand-logo {
-    width: 36px;
-    height: 36px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: #fff;
-    display: grid;
-    place-items: center;
-    font-weight: 800;
-    font-size: 18px;
-}
-
-.brand-name {
-    font-weight: 700;
-    font-size: 16px;
-    color: var(--text);
-}
-
-.status {
-    margin-left: auto;
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 999px;
-    background: var(--status-bg);
-    color: var(--status-text);
-}
-
-.messages {
-    padding: 20px 16px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    background: var(--bg);
-}
-
-.row {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-
-    &.bot {
-        justify-content: flex-start;
-    }
-
-    &.user {
-        justify-content: flex-end;
-    }
-}
-
-.avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 999px;
-    background: var(--bubble-border);
-    display: grid;
-    place-items: center;
-    color: #fff;
-    font-weight: 700;
-    flex-shrink: 0;
-}
-
+.messages { padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
+.row { display: flex; gap: 10px; align-items: flex-end; &.bot { justify-content: flex-start; } &.user { justify-content: flex-end; } }
+.avatar { width: 36px; height: 36px; border-radius: 999px; background: var(--bubble-border); display: grid; place-items: center; color: #fff; font-weight: 700; flex-shrink: 0; }
 .bubble {
-    max-width: 70ch;
-    padding: 12px 14px;
-    border-radius: 16px;
-    line-height: 1.45;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.07) inset, 0 4px 8px var(--shadow-color);
-    position: relative;
-    border: 1px solid var(--bubble-border);
-
-    &.user {
-        background: var(--bubble-user);
-        color: #fff;
-        border-top-right-radius: 6px;
-    }
-
-    &.bot {
-        background: var(--bubble-bot);
-        color: var(--text);
-        border-top-left-radius: 6px;
-    }
+    max-width: 70ch; padding: 12px 14px; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.07) inset, 0 4px 8px var(--shadow-color); position: relative; border: 1px solid var(--bubble-border);
+    &.user { background: var(--bubble-user); color: #fff; border-top-right-radius: 6px; }
+    &.bot { background: var(--bubble-bot); color: var(--text); border-top-left-radius: 6px; }
 }
 
-.meta {
-    display: block;
-    font-size: 11px;
-    opacity: 0.75;
-    margin-top: 6px;
-}
+.meta { display: block; font-size: 11px; opacity: 0.75; margin-top: 6px; }
+.typing { display: inline-flex; gap: 4px; align-items: center; span { width: 6px; height: 6px; background: var(--text); border-radius: 999px; animation: blink 1.2s infinite; opacity: 0.35; &:nth-child(2) { animation-delay: 0.15s; } &:nth-child(3) { animation-delay: 0.3s; } } }
+@keyframes blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
 
-.typing {
-    display: inline-flex;
-    gap: 4px;
-    align-items: center;
-
-    span {
-        width: 6px;
-        height: 6px;
-        background: var(--text);
-        border-radius: 999px;
-        display: inline-block;
-        animation: blink 1.2s infinite;
-        opacity: 0.35;
-
-        &:nth-child(2) {
-            animation-delay: 0.15s;
-        }
-
-        &:nth-child(3) {
-            animation-delay: 0.3s;
-        }
-    }
-}
-
-@keyframes blink {
-
-    0%,
-    80%,
-    100% {
-        opacity: 0.2;
-    }
-
-    40% {
-        opacity: 1;
-    }
-}
-
-.attach {
-    margin-top: 8px;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
+.attach { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
 .chip-file {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--chip-bg);
-    color: var(--chip-fg);
-    border: 1px solid var(--bubble-border);
-    border-radius: 10px;
-    padding: 6px 8px;
-    font-size: 12px;
-
-    .ext {
-        width: 28px;
-        height: 28px;
-        border-radius: 8px;
-        display: grid;
-        place-items: center;
-        background: rgba(0, 0, 0, 0.06);
-        color: inherit;
-        font-weight: 700;
-        text-transform: uppercase;
-        font-size: 10px;
-    }
-
-    .name {
-        max-width: 240px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
+    display: flex; align-items: center; gap: 8px; background: var(--chip-bg); color: var(--chip-fg); border: 1px solid var(--bubble-border); border-radius: 10px; padding: 6px 8px; font-size: 12px;
+    .ext { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: rgba(0, 0, 0, 0.06); color: inherit; font-weight: 700; text-transform: uppercase; font-size: 10px; }
+    .name { max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
-.composer {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px;
-    background: var(--panel);
-    border-top: 1px solid var(--bubble-border);
+.composer { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--panel); border-top: 1px solid var(--bubble-border); }
+.field { flex: 1; display: flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--bubble-border); border-radius: 14px; padding: 8px;
+    textarea { flex: 1; background: transparent; border: none; outline: none; color: var(--text); padding: 2px; font-size: 14px; resize: none; height: 20px; min-height: 20px; max-height: 160px; overflow: auto; line-height: 1.4; font-family: inherit; }
 }
+.icon-btn, .send-btn { appearance: none; border: none; outline: none; cursor: pointer; display: grid; place-items: center; }
+.icon-btn { background: var(--bubble-bot); width: 36px; height: 36px; border-radius: 10px; color: var(--stone-500); flex-shrink: 0; svg { width: 20px; height: 20px; } }
+.send-btn { background: var(--accent); color: #fff; width: 42px; height: 42px; border-radius: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; &:disabled { opacity: 0.5; cursor: not-allowed; } }
 
-.field {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--bg);
-    border: 1px solid var(--bubble-border);
-    border-radius: 14px;
-    padding: 8px;
-
-    textarea {
-        flex: 1;
-        background: transparent;
-        border: none;
-        outline: none;
-        color: var(--text);
-        padding: 2px;
-        font-size: 14px;
-        resize: none;
-        height: 20px;
-        min-height: 20px;
-        max-height: 160px;
-        overflow: auto;
-        line-height: 1.4;
-        font-family: inherit;
-    }
-}
-
-.icon-btn,
-.send-btn {
-    appearance: none;
-    border: none;
-    outline: none;
-    cursor: pointer;
-    display: grid;
-    place-items: center;
-}
-
-.icon-btn {
-    background: var(--bubble-bot);
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    color: var(--stone-500);
-    flex-shrink: 0;
-
-    svg {
-        width: 20px;
-        height: 20px;
-    }
-}
-
-.send-btn {
-    background: var(--accent);
-    color: #fff;
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-    font-weight: 800;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-
-    &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-}
-
-.files {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    padding: 8px 16px;
-    background: var(--panel);
-    border-top: 1px solid var(--bubble-border);
-}
-
-.file {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border: 1px solid var(--bubble-border);
-    background: var(--bg);
-    border-radius: 10px;
-    padding: 6px 8px;
-    font-size: 12px;
-    color: var(--text);
-
-    img {
-        width: 36px;
-        height: 36px;
-        object-fit: cover;
-        border-radius: 8px;
-    }
-
-    .x {
-        cursor: pointer;
-        opacity: 0.75;
-        margin-left: 4px;
-
-        &:hover {
-            opacity: 1;
-        }
-    }
-}
-
-.hint {
-    font-size: 12px;
-    color: var(--stone-500);
-    text-align: center;
-    padding: 8px 0;
-}
+.files { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 16px; background: var(--panel); border-top: 1px solid var(--bubble-border); }
+.file { display: flex; align-items: center; gap: 8px; border: 1px solid var(--bubble-border); background: var(--bg); border-radius: 10px; padding: 6px 8px; font-size: 12px; color: var(--text); img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; } .x { cursor: pointer; opacity: 0.75; margin-left: 4px; &:hover { opacity: 1; } } }
+.hint { font-size: 12px; color: var(--stone-500); text-align: center; padding: 8px 0; }
 </style>
