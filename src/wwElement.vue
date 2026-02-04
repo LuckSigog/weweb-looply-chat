@@ -15,7 +15,7 @@
                 <div v-for="(message, index) in messages" :key="index" class="row" :class="message.type">
                     <div v-if="message.type === 'bot'" class="avatar">{{ brandInitial }}</div>
 
-                    <div class="bubble" :class="message.type">
+                    <div class="bubble" :class="[message.type, { 'is-streaming': message.isStreaming && !message.text }]">
                         <template v-if="message.isTyping">
                             <span class="typing">
                                 <span></span>
@@ -24,7 +24,13 @@
                             </span>
                         </template>
                         <template v-else>
-                            {{ message.text }}
+                            <!-- Skeleton Loader while streaming and text is empty -->
+                            <div v-if="message.isStreaming && !message.text" class="skeleton-loader">
+                                <div class="skeleton-line"></div>
+                                <div class="skeleton-line short"></div>
+                            </div>
+                            
+                            <span v-else>{{ message.text }}</span>
 
                             <!-- Attachments -->
                             <div v-if="message.attachments?.length" class="attach">
@@ -174,13 +180,14 @@ export default {
             });
         };
 
-        const addMessage = (text, type = 'bot', attachments = [], isTyping = false) => {
+        const addMessage = (text, type = 'bot', attachments = [], isTyping = false, isStreaming = false) => {
             const message = {
                 text: text || '',
                 type,
                 time: getTimeString(),
                 attachments: attachments || [],
-                isTyping: isTyping || false
+                isTyping: isTyping || false,
+                isStreaming: isStreaming || false
             };
             messages.value.push(message);
             scrollToBottom();
@@ -226,25 +233,19 @@ export default {
 
         const parseAndProcessChunks = (text) => {
             streamBuffer.value += text;
-            
-            // Regex para encontrar objetos JSON completos {"type":...}
             let boundary;
             while ((boundary = streamBuffer.value.indexOf('}{')) !== -1) {
                 const chunk = streamBuffer.value.slice(0, boundary + 1);
                 processSingleJSON(chunk);
                 streamBuffer.value = streamBuffer.value.slice(boundary + 1);
             }
-            
-            // Tenta processar o que sobrou se for um JSON válido completo
             try {
                 const lastChunk = streamBuffer.value.trim();
                 if (lastChunk.startsWith('{') && lastChunk.endsWith('}')) {
                     processSingleJSON(lastChunk);
                     streamBuffer.value = '';
                 }
-            } catch (e) {
-                // Ainda incompleto, aguarda próximo chunk
-            }
+            } catch (e) {}
         };
 
         const processSingleJSON = (jsonStr) => {
@@ -253,11 +254,13 @@ export default {
                 if (data.type === 'begin') {
                     removeTypingIndicator();
                     if (!streamingMessageRef.value) {
-                        streamingMessageRef.value = addMessage('', 'bot');
+                        streamingMessageRef.value = addMessage('', 'bot', [], false, true);
                     }
                 } else if (data.type === 'item') {
                     removeTypingIndicator();
-                    if (!streamingMessageRef.value) streamingMessageRef.value = addMessage('', 'bot');
+                    if (!streamingMessageRef.value) {
+                        streamingMessageRef.value = addMessage('', 'bot', [], false, true);
+                    }
                     
                     if (data.content) {
                         if (data.metadata?.nodeName?.includes('AI Agent')) {
@@ -273,7 +276,10 @@ export default {
                         scrollToBottom();
                     }
                 } else if (data.type === 'end') {
-                    // Finaliza mas mantém a referência para o próximo nó se houver
+                    if (streamingMessageRef.value) {
+                        // Mark as no longer streaming when fully finished
+                        // Note: In some workflows there might be multiple begin/end pairs
+                    }
                 }
             } catch (e) {
                 console.error('Erro ao processar JSON unitário:', e);
@@ -300,7 +306,7 @@ export default {
             });
 
             isSending.value = true;
-            addMessage('', 'bot', [], true); // Indicador de digitando
+            addMessage('', 'bot', [], true); // Typing indicator
             streamingMessageRef.value = null;
             streamBuffer.value = '';
 
@@ -320,13 +326,12 @@ export default {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    
                     const chunkText = decoder.decode(value, { stream: true });
                     parseAndProcessChunks(chunkText);
                 }
 
-                // Finalização
                 if (streamingMessageRef.value) {
+                    streamingMessageRef.value.isStreaming = false;
                     const finalBotText = streamingMessageRef.value.text;
                     setLastBotMessage(finalBotText);
                     const history = [...(messageHistory.value || [])];
@@ -419,9 +424,22 @@ export default {
 .bubble {
     max-width: 70ch; padding: 12px 14px; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.07) inset, 0 4px 8px var(--shadow-color); position: relative; border: 1px solid var(--bubble-border);
+    transition: all 0.2s ease;
     &.user { background: var(--bubble-user); color: #fff; border-top-right-radius: 6px; }
     &.bot { background: var(--bubble-bot); color: var(--text); border-top-left-radius: 6px; }
+    &.is-streaming { min-width: 80px; min-height: 44px; display: flex; align-items: center; }
 }
+
+.skeleton-loader {
+    width: 100%; display: flex; flex-direction: column; gap: 8px;
+    .skeleton-line {
+        height: 12px; background: linear-gradient(90deg, transparent 25%, rgba(150,150,150,0.1) 50%, transparent 75%);
+        background-size: 200% 100%; animation: skeleton-wave 1.5s infinite; border-radius: 4px; width: 140px;
+        &.short { width: 80px; }
+    }
+}
+
+@keyframes skeleton-wave { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 .meta { display: block; font-size: 11px; opacity: 0.75; margin-top: 6px; }
 .typing { display: inline-flex; gap: 4px; align-items: center; span { width: 6px; height: 6px; background: var(--text); border-radius: 999px; animation: blink 1.2s infinite; opacity: 0.35; &:nth-child(2) { animation-delay: 0.15s; } &:nth-child(3) { animation-delay: 0.3s; } } }
