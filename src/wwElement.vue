@@ -1,7 +1,6 @@
 <template>
     <div class="looply-chat-app">
         <div class="chat-card">
-            <!-- Header -->
             <div class="header">
                 <div class="brand-logo" :style="{ background: brandColor }">
                     {{ brandInitial }}
@@ -10,7 +9,6 @@
                 <span class="status">{{ statusText }}</span>
             </div>
 
-            <!-- Messages -->
             <div ref="messagesContainer" class="messages">
                 <div v-for="(message, index) in messages" :key="index" class="row" :class="message.type">
                     <div v-if="message.type === 'bot'" class="avatar">{{ brandInitial }}</div>
@@ -24,10 +22,8 @@
                             </span>
                         </template>
                         <template v-else>
-                            <!-- Markdown Rendered Content -->
                             <div class="markdown-content" v-html="renderMarkdown(message.text)"></div>
 
-                            <!-- Attachments -->
                             <div v-if="message.attachments?.length" class="attach">
                                 <div v-for="(file, fileIndex) in message.attachments" :key="fileIndex" class="chip-file"
                                     :style="{ cursor: file.url ? 'pointer' : 'default' }"
@@ -49,7 +45,6 @@
                 </div>
             </div>
 
-            <!-- File Preview Bar -->
             <div v-if="selectedFiles.length > 0" class="files">
                 <div v-for="(file, index) in selectedFiles" :key="index" class="file">
                     <img v-if="file.type.startsWith('image/')" :src="file.preview" alt="preview" />
@@ -58,7 +53,6 @@
                 </div>
             </div>
 
-            <!-- Composer -->
             <div class="composer">
                 <div class="field">
                     <label class="icon-btn" for="fileInput" role="button" tabindex="0" title="Anexar"
@@ -87,7 +81,7 @@
 </template>
 
 <script>
-import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { ref, computed, nextTick, onMounted } from 'vue';
 import { marked } from 'marked';
 
 export default {
@@ -95,9 +89,7 @@ export default {
     props: {
         content: { type: Object, required: true },
         uid: { type: String, required: true },
-        /* wwEditor:start */
         wwEditorState: { type: Object, required: true }
-        /* wwEditor:end */
     },
     emits: ['trigger-event'],
     setup(props, { emit } ) {
@@ -308,8 +300,9 @@ export default {
 .messages { padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
 .row { display: flex; gap: 10px; align-items: flex-end; &.bot { justify-content: flex-start; } &.user { justify-content: flex-end; } }
 .avatar { width: 36px; height: 36px; border-radius: 999px; background: var(--bubble-border); display: grid; place-items: center; color: #fff; font-weight: 700; flex-shrink: 0; }
+
 .bubble {
-    max-width: 70ch; padding: 12px 14px; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
+    max-width: 70ch; padding: 10px 14px; border-radius: 16px; line-height: 1.45; word-wrap: break-word;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.07) inset, 0 4px 8px var(--shadow-color); position: relative; border: 1px solid var(--bubble-border);
     &.user { background: var(--bubble-user); color: #fff; border-top-right-radius: 6px; }
     &.bot { background: var(--bubble-bot); color: var(--text); border-top-left-radius: 6px; }
@@ -317,18 +310,17 @@ export default {
 
 .markdown-content {
     display: block;
-    :deep(*) { margin: 0 !important; padding: 0 !important; }
-    :deep(p) { margin: 0 !important; padding: 0 !important; line-height: 1.45; }
+    :deep(p) { margin: 0 !important; line-height: 1.45; }
     :deep(p + p) { margin-top: 8px !important; }
-    :deep(strong) { font-weight: 700; }
-    :deep(em) { font-style: italic; }
-    :deep(a) { color: inherit; text-decoration: underline; }
     :deep(ul), :deep(ol) { margin: 8px 0 8px 20px !important; }
     :deep(li) { margin-bottom: 4px !important; }
+    :deep(strong) { font-weight: 700; }
+    :deep(a) { color: inherit; text-decoration: underline; }
 }
 
-.meta { display: block; font-size: 11px; opacity: 0.75; margin-top: 6px; }
-.typing { display: inline-flex; gap: 4px; align-items: center; span { width: 6px; height: 6px; background: var(--text); border-radius: 999px; animation: blink 1.2s infinite; opacity: 0.35; &:nth-child(2) { animation-delay: 0.15s; } &:nth-child(3) { animation-delay: 0.3s; } } }
+.meta { display: block; font-size: 11px; opacity: 0.7; margin-top: 4px; line-height: 1; }
+
+.typing { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; span { width: 6px; height: 6px; background: var(--text); border-radius: 999px; animation: blink 1.2s infinite; opacity: 0.35; &:nth-child(2) { animation-delay: 0.15s; } &:nth-child(3) { animation-delay: 0.3s; } } }
 @keyframes blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
 
 .attach { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
