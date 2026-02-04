@@ -316,7 +316,7 @@ export default {
 }
 
 .markdown-content {
-    :deep(p) { margin: 0 0 8px 0; &:last-child { margin-bottom: 0; } }
+    :deep(p) { margin: 0; &:not(:last-child) { margin-bottom: 8px; } }
     :deep(strong) { font-weight: 700; }
     :deep(em) { font-style: italic; }
     :deep(a) { color: inherit; text-decoration: underline; }
