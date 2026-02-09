@@ -2,8 +2,8 @@
     <div class="looply-chat-app">
         <div class="chat-card">
             <div class="header">
-                <div class="brand-logo" :style="{ background: brandColor }">
-                    {{ brandInitial }}
+                <div class="brand-logo">
+                    <img :src="botLogoUrl" alt="Bot Logo" class="avatar-img">
                 </div>
                 <div class="brand-name">{{ brandName }}</div>
                 <span class="status">{{ statusText }}</span>
@@ -11,7 +11,9 @@
 
             <div ref="messagesContainer" class="messages">
                 <div v-for="(message, index) in messages" :key="index" class="row" :class="message.type">
-                    <div v-if="message.type === 'bot'" class="avatar">{{ brandInitial }}</div>
+                    <div v-if="message.type === 'bot'" class="avatar">
+                        <img :src="botLogoUrl" alt="Bot" class="avatar-img">
+                    </div>
 
                     <div v-if="message.isTyping || (message.text && message.text.trim().length > 0)" 
                          class="bubble" :class="message.type">
@@ -29,7 +31,7 @@
                         </template>
                     </div>
 
-                    <div v-if="message.type === 'user'" class="avatar">👤</div>
+                    <div v-if="message.type === 'user'" class="avatar user-icon">👤</div>
                 </div>
             </div>
 
@@ -81,9 +83,11 @@ export default {
         const streamingMessageRef = ref(null);
         const streamBuffer = ref('');
 
+        // Configurações de Marca
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
-        const brandInitial = computed(() => (brandName.value).charAt(0).toUpperCase());
         const brandColor = computed(() => props.content?.brandColor || '#ef4444');
+        // Alterado: Link da imagem fornecido
+        const botLogoUrl = ref("https://cdn.weweb.io/designs/55281739-2ed5-46ce-9832-6a234daa52c6/sections/Frame_2147223369.png?_wwcv=1770645958747");
 
         const { setValue: setMessageHistory } = wwLib.wwVariable.useComponentVariable({ uid: props.uid, name: 'messageHistory', type: 'array', defaultValue: [] });
 
@@ -129,7 +133,7 @@ export default {
 
             addMessage(text, 'user');
             isSending.value = true;
-            addMessage('', 'bot', true); // Indicador de carregamento
+            addMessage('', 'bot', true); 
             streamingMessageRef.value = null;
 
             try {
@@ -168,7 +172,7 @@ export default {
 
         onMounted(() => { if (props.content?.welcomeMessage) addMessage(props.content.welcomeMessage, 'bot'); });
 
-        return { messages, inputText, isSending, brandName, brandInitial, brandColor, renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, messagesContainer, textareaInput, triggerFileInput, fileInputElement };
+        return { messages, inputText, isSending, brandName, brandColor, botLogoUrl, renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, messagesContainer, textareaInput, triggerFileInput, fileInputElement };
     }
 };
 </script>
@@ -179,28 +183,39 @@ export default {
     --panel: #f5f5f4;
     --text: #1c1917;
     --accent: v-bind(brandColor);
-    --border: #e7e5e4;
+    --border: #F5F5F4; /* Alterado: De #E7E5E4 para #F5F5F4 */
     width: 100%; height: 100%; padding: 16px; box-sizing: border-box;
 }
 
 .chat-card {
     display: grid; grid-template-rows: auto 1fr auto auto; height: 100%;
-    background: var(--panel); border-radius: 16px; border: 1px solid var(--border); overflow: hidden;
+    background: var(--panel); border-radius: 16px; border: 1px solid #e7e5e4; overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-.header { padding: 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
-.brand-logo { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: white; font-weight: bold; }
+.header { padding: 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e7e5e4; background: var(--panel); }
+
+/* Estilo para a logo redonda */
+.brand-logo { 
+    width: 36px; height: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
+
 .brand-name { font-weight: 700; color: var(--text); }
 .status { margin-left: auto; font-size: 12px; padding: 4px 8px; background: #fee2e2; color: #b91c1c; border-radius: 999px; }
 
 .messages { padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: white; }
 .row { display: flex; gap: 10px; align-items: flex-end; &.user { justify-content: flex-end; } }
-.avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--border); display: grid; place-items: center; font-size: 14px; flex-shrink: 0; }
+
+.avatar { 
+    width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; 
+    background: #f3f4f6;
+}
+.avatar.user-icon { background: var(--border); }
 
 .bubble {
-    max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border);
-    &.bot { background: #f3f4f6; color: var(--text); border-bottom-left-radius: 4px; }
+    max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
+    &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; } /* Alterado: Cor de fundo do balão bot */
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
 }
 
@@ -215,9 +230,9 @@ export default {
 }
 @keyframes blink { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 
-.composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid var(--border); }
+.composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid #e7e5e4; }
 .field {
-    flex: 1; display: flex; align-items: center; gap: 8px; background: white; border: 1px solid var(--border); border-radius: 20px; padding: 8px 12px;
+    flex: 1; display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #e7e5e4; border-radius: 20px; padding: 8px 12px;
     textarea {
         flex: 1; border: none; outline: none; background: transparent; font-size: 14px; resize: none; height: 21px; max-height: 160px; line-height: 21px; font-family: inherit;
     }
