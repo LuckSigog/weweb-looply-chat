@@ -153,7 +153,30 @@ export default {
             defaultValue: [] 
         });
 
-        marked.setOptions({ breaks: true, gfm: true });
+        // Configuração personalizada do Marked para abrir links em nova aba
+        const renderer = new marked.Renderer();
+        renderer.link = (href, title, text) => {
+            // Garante que href, title e text sejam tratados corretamente (compatibilidade)
+            let url = href;
+            let label = text;
+            let tooltip = title;
+            
+            // Se o marked passar um objeto (versões mais recentes)
+            if (typeof href === 'object' && href !== null) {
+                url = href.href;
+                label = href.text;
+                tooltip = href.title;
+            }
+            
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer" title="${tooltip || ''}">${label}</a>`;
+        };
+
+        marked.setOptions({ 
+            breaks: true, 
+            gfm: true,
+            renderer 
+        });
+
         const renderMarkdown = (t) => t ? marked.parse(t) : '';
         
         const scrollToBottom = () => {
