@@ -15,7 +15,9 @@
                         <img :src="botLogoUrl" alt="Bot" class="avatar-img">
                     </div>
 
-                    <div v-if="message.isTyping || (message.text && message.text.trim().length > 0)" 
+                    <!-- Condição ajustada para evitar o vácuo visual: 
+                         Mostra o balão se estiver digitando ou se tiver qualquer conteúdo -->
+                    <div v-if="message.isTyping || (message.text !== undefined && message.text.length > 0)" 
                          class="bubble" :class="message.type">
                         
                         <template v-if="message.isTyping">
@@ -83,13 +85,11 @@ export default {
         const streamingMessageRef = ref(null);
         const streamBuffer = ref('');
 
-        // Configurações de Marca e Status
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
         const brandColor = computed(() => props.content?.brandColor || '#ef4444');
         const statusText = computed(() => isSending.value ? 'Respondendo...' : 'Online');
         const botLogoUrl = ref("https://cdn.weweb.io/designs/55281739-2ed5-46ce-9832-6a234daa52c6/sections/Frame_2147223369.png?_wwcv=1770645958747");
 
-        // Variáveis do WeWeb (exemplo de histórico)
         const { setValue: setMessageHistory } = wwLib.wwVariable.useComponentVariable({ 
             uid: props.uid, 
             name: 'messageHistory', 
@@ -130,28 +130,28 @@ export default {
             }
         };
 
+        const removeTypingIndicator = () => {
+            const typingIdx = messages.value.findIndex(m => m.isTyping);
+            if (typingIdx > -1) messages.value.splice(typingIdx, 1);
+        };
+
         const handleJsonChunk = (jsonStr) => {
             if (!jsonStr.trim()) return;
             try {
                 const data = JSON.parse(jsonStr);
                 
-                // Trata o início da resposta
+                // Trata o início da resposta: Apenas preparamos o ambiente
                 if (data.type === 'begin') {
-                    // Remove o balão de typing
-                    const typingIdx = messages.value.findIndex(m => m.isTyping);
-                    if (typingIdx > -1) messages.value.splice(typingIdx, 1);
-                    
-                    // Cria o novo balão de resposta se não existir
+                    // NÃO removemos o typing aqui para evitar o buraco visual na tela
                     if (!streamingMessageRef.value) {
-                        streamingMessageRef.value = addMessage('', 'bot');
+                        // Apenas garantimos que o ref está pronto
                     }
                 }
 
                 // Trata o conteúdo da resposta
                 if (data.type === 'item' && data.content) {
-                    // Garantir que o typing saiu (fallback)
-                    const typingIdx = messages.value.findIndex(m => m.isTyping);
-                    if (typingIdx > -1) messages.value.splice(typingIdx, 1);
+                    // REMOVE o typing apenas quando o primeiro pedaço de texto real chegar
+                    removeTypingIndicator();
 
                     if (!streamingMessageRef.value) {
                         streamingMessageRef.value = addMessage('', 'bot');
@@ -162,27 +162,20 @@ export default {
 
                 // Trata o fim da resposta
                 if (data.type === 'end') {
-                    // Opcional: Alguma lógica de finalização
+                    removeTypingIndicator(); // Fallback caso o stream tenha sido muito curto
                 }
             } catch (e) {
-                // Se falhar o parse, provavelmente é um JSON incompleto no buffer
                 throw e; 
             }
         };
 
         const processStreamText = (text) => {
             streamBuffer.value += text;
-
-            // Divide por quebras de linha (comum em streams NDJSON)
             let lines = streamBuffer.value.split('\n');
-            
-            // Mantém a última linha no buffer caso esteja incompleta
             streamBuffer.value = lines.pop();
 
             for (const line of lines) {
                 if (!line.trim()) continue;
-                
-                // Lida com múltiplos objetos colados no mesmo chunk (}{)
                 let parts = line.split('}{');
                 if (parts.length > 1) {
                     parts = parts.map((p, i) => {
@@ -196,13 +189,10 @@ export default {
                 }
             }
 
-            // Tenta processar o que restou se for um JSON válido
             try {
                 handleJsonChunk(streamBuffer.value);
                 streamBuffer.value = '';
-            } catch (e) {
-                // Ainda incompleto
-            }
+            } catch (e) {}
         };
 
         const sendMessage = async () => {
@@ -216,7 +206,7 @@ export default {
 
             addMessage(text, 'user');
             isSending.value = true;
-            addMessage('', 'bot', true); 
+            addMessage('', 'bot', true); // Adiciona os pontinhos de "digitando"
             streamingMessageRef.value = null;
             streamBuffer.value = '';
 
@@ -226,7 +216,7 @@ export default {
                     body: JSON.stringify({ 
                         message: text, 
                         sessionId: props.uid,
-                        clientId: clientId // Adicionado conforme solicitado
+                        clientId: clientId
                     }),
                     headers: { 'Content-Type': 'application/json' }
                 });
@@ -243,14 +233,11 @@ export default {
                 }
             } catch (e) {
                 console.error("Erro no chat:", e);
-                // Limpa o indicador de carregamento
-                const typingIdx = messages.value.findIndex(m => m.isTyping);
-                if (typingIdx > -1) messages.value.splice(typingIdx, 1);
-                
+                removeTypingIndicator();
                 addMessage("Ocorreu um problema ao conectar com o assistente.", "bot");
             } finally {
                 isSending.value = false;
-                // Atualiza o histórico no WeWeb ao final
+                removeTypingIndicator(); // Garantia final
                 setMessageHistory([...messages.value]);
             }
         };
@@ -271,21 +258,9 @@ export default {
         });
 
         return { 
-            messages, 
-            inputText, 
-            isSending, 
-            brandName, 
-            brandColor, 
-            botLogoUrl, 
-            statusText,
-            renderMarkdown, 
-            updateTextareaHeight, 
-            handleKeydown, 
-            sendMessage, 
-            messagesContainer, 
-            textareaInput, 
-            triggerFileInput, 
-            fileInputElement 
+            messages, inputText, isSending, brandName, brandColor, botLogoUrl, statusText,
+            renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, 
+            messagesContainer, textareaInput, triggerFileInput, fileInputElement 
         };
     }
 };
@@ -337,6 +312,7 @@ export default {
 
 .bubble {
     max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
+    min-height: 20px; /* Garante uma altura mínima para evitar saltos visuais */
     &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
 }
