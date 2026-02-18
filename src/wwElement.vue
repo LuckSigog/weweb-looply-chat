@@ -22,11 +22,7 @@
                         <!-- Skeleton Loader Moderno (Efeito Shimmer) + Textos Rotativos -->
                         <template v-if="message.isTyping || (message.type === 'bot' && isSending && index === messages.length - 1 && (!message.text || message.text.trim().length === 0))">
                             <div class="skeleton-loader">
-                                <div class="sk-line w-100"></div>
-                                <div class="sk-line w-90"></div>
-                                <div class="sk-line w-70"></div>
-                                
-                                <!-- NOVO: Texto de Status Dinâmico -->
+                                <!-- NOVO LOCAL: Texto de Status Dinâmico (Em Cima) -->
                                 <div class="loading-text-wrapper">
                                     <Transition name="fade" mode="out-in">
                                         <span :key="currentLoadingText" class="loading-status-text">
@@ -34,6 +30,11 @@
                                         </span>
                                     </Transition>
                                 </div>
+
+                                <!-- Linhas do Skeleton (Mais largas e animadas) -->
+                                <div class="sk-line w-100"></div>
+                                <div class="sk-line w-95"></div>
+                                <div class="sk-line w-85"></div>
                             </div>
                         </template>
                         <template v-else>
@@ -348,7 +349,8 @@ export default {
 .avatar.user-icon { background: #e7e5e4; }
 
 .bubble {
-    max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
+    max-width: 85%; /* Aumentado de 75% para 85% para dar mais espaço */
+    padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
     min-height: 44px;
     display: flex; flex-direction: column; justify-content: center;
     &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
@@ -362,7 +364,7 @@ export default {
 /* Skeleton Loader Moderno (Shimmer) */
 .skeleton-loader {
     width: 100%;
-    min-width: 160px;
+    min-width: 220px; /* Aumentado para garantir um balão largo durante o loading */
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -372,40 +374,43 @@ export default {
 .sk-line {
     height: 10px;
     border-radius: 5px;
+    /* Gradiente mais forte para ser mais visível/animado */
     background: linear-gradient(
         90deg, 
-        rgba(0,0,0,0.04) 0%, 
-        rgba(0,0,0,0.09) 50%, 
-        rgba(0,0,0,0.04) 100%
+        rgba(0,0,0,0.06) 0%, 
+        rgba(0,0,0,0.15) 50%, 
+        rgba(0,0,0,0.06) 100%
     );
     background-size: 200% 100%;
-    animation: shimmer 1.5s infinite linear;
+    /* Animação acelerada de 1.5s para 1s */
+    animation: shimmer 1s infinite linear;
     
     &.w-100 { width: 100%; }
-    &.w-90 { width: 90%; }
-    &.w-70 { width: 70%; }
+    &.w-95 { width: 95%; } /* Mais largo */
+    &.w-85 { width: 85%; } /* Mais largo */
 }
 
 /* Estilo do Texto de Status */
 .loading-text-wrapper {
-    height: 16px; /* Altura fixa para evitar pulos quando o texto muda */
+    height: 16px; 
     display: flex;
     align-items: center;
-    margin-top: 4px;
+    margin-bottom: 8px; /* Espaço entre texto e skeleton */
 }
 
 .loading-status-text {
-    font-size: 11px;
-    color: #78716c; /* Stone-500, discreto */
+    font-size: 12px; /* Levemente maior */
+    color: #57534e; /* Stone-600, mais contraste */
     font-weight: 500;
+    /* Animação sutil de pulso no texto */
+    animation: textPulse 1.5s infinite ease-in-out;
 }
 
-/* Animação de Fade (Vue Transition) */
+/* Animação de Fade para troca de texto */
 .fade-enter-active,
 .fade-leave-active {
     transition: opacity 0.4s ease;
 }
-
 .fade-enter-from,
 .fade-leave-to {
     opacity: 0;
@@ -414,6 +419,11 @@ export default {
 @keyframes shimmer { 
     0% { background-position: -200% 0; } 
     100% { background-position: 200% 0; } 
+}
+
+@keyframes textPulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
 }
 
 .composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid #e7e5e4; }
