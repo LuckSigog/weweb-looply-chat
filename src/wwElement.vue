@@ -15,13 +15,13 @@
                         <img :src="botLogoUrl" alt="Bot" class="avatar-img">
                     </div>
 
-                    <!-- Lógica Blindada de Exibição do Balão -->
-                    <div v-if="message.isTyping || (message.text && message.text.length > 0) || (message.type === 'bot' && isSending && index === messages.length - 1)" 
+                    <!-- Balão de Mensagem -->
+                    <div v-if="shouldShowSkeleton(message, index) || (message.text && message.text.length > 0)" 
                          class="bubble" 
-                         :class="[message.type, { 'loading-state': message.isTyping }]">
+                         :class="[message.type, { 'loading-state': shouldShowSkeleton(message, index) }]">
                         
-                        <!-- Skeleton Loader Moderno (Efeito Shimmer) + Textos Rotativos -->
-                        <template v-if="message.isTyping || (message.type === 'bot' && isSending && index === messages.length - 1 && (!message.text || message.text.trim().length === 0))">
+                        <!-- CONTEÚDO: Skeleton Loader (Carregando) -->
+                        <template v-if="shouldShowSkeleton(message, index)">
                             <div class="skeleton-loader">
                                 <!-- Texto de Status com Animação Letra por Letra -->
                                 <div class="loading-text-wrapper">
@@ -35,12 +35,14 @@
                                     </TransitionGroup>
                                 </div>
 
-                                <!-- Linhas do Skeleton (Mais largas e animadas lentamente) -->
+                                <!-- Linhas do Skeleton (Ocupando largura total do balão 80%) -->
                                 <div class="sk-line w-100"></div>
                                 <div class="sk-line w-95"></div>
                                 <div class="sk-line w-85"></div>
                             </div>
                         </template>
+
+                        <!-- CONTEÚDO: Texto Final (Markdown) -->
                         <template v-else>
                             <div class="markdown-content" v-html="renderMarkdown(message.text)"></div>
                             <span class="meta">
@@ -110,7 +112,7 @@ export default {
             'Quase lá...'
         ];
         const currentLoadingText = ref(loadingPhrases[0]);
-        const currentPhraseIndex = ref(0); // Para forçar re-render da animação
+        const currentPhraseIndex = ref(0);
         let loadingInterval = null;
 
         const startLoadingTextCycle = () => {
@@ -121,9 +123,9 @@ export default {
             if (loadingInterval) clearInterval(loadingInterval);
             loadingInterval = setInterval(() => {
                 index = (index + 1) % loadingPhrases.length;
-                currentPhraseIndex.value = index; // Atualiza índice para chave da animação
+                currentPhraseIndex.value = index;
                 currentLoadingText.value = loadingPhrases[index];
-            }, 3000); // 3 segundos para dar tempo de ler a animação
+            }, 3000);
         };
 
         const stopLoadingTextCycle = () => {
@@ -131,7 +133,6 @@ export default {
             loadingInterval = null;
         };
         
-        // Helper para manter espaços na animação letra por letra
         const getSplitText = (text) => {
             return text.split('').map(char => char === ' ' ? '\u00A0' : char);
         };
@@ -172,6 +173,14 @@ export default {
             messages.value.push(msg);
             scrollToBottom();
             return messages.value[messages.value.length - 1];
+        };
+
+        // Função centralizada para determinar se o esqueleto deve aparecer
+        // Isso sincroniza o v-if e o :class para que a largura nunca quebre
+        const shouldShowSkeleton = (message, index) => {
+            const isLastBotMessage = message.type === 'bot' && isSending.value && index === messages.value.length - 1;
+            const hasNoText = !message.text || message.text.trim().length === 0;
+            return message.isTyping || (isLastBotMessage && hasNoText);
         };
 
         const updateTextareaHeight = () => {
@@ -310,7 +319,7 @@ export default {
             messages, inputText, isSending, brandName, brandColor, botLogoUrl, statusText,
             renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, 
             messagesContainer, textareaInput, triggerFileInput, fileInputElement,
-            currentLoadingText, getSplitText, currentPhraseIndex 
+            currentLoadingText, getSplitText, currentPhraseIndex, shouldShowSkeleton
         };
     }
 };
@@ -340,8 +349,9 @@ export default {
         --text: #fafaf9;
         --border: #44403c;
         --bubble-bot-bg: #292524;
-        --skeleton-base: rgba(255,255,255,0.06);
-        --skeleton-shine: rgba(255,255,255,0.15);
+        /* Aumentei levemente a opacidade para garantir visibilidade no fundo escuro */
+        --skeleton-base: rgba(255,255,255,0.08);
+        --skeleton-shine: rgba(255,255,255,0.18);
     }
 }
 
@@ -385,11 +395,12 @@ export default {
     padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border);
     min-height: 44px;
     display: flex; flex-direction: column; justify-content: center;
+    transition: width 0.3s ease; /* Animação suave na troca de largura */
     
     &.bot { background: var(--bubble-bot-bg); color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
     
-    /* Quando em loading, força largura de 80% do chat */
+    /* Quando em loading, força largura de 80% DO CONTAINER PAI (.row) */
     &.loading-state {
         width: 80%;
     }
@@ -418,7 +429,7 @@ export default {
         var(--skeleton-base) 100%
     );
     background-size: 200% 100%;
-    animation: shimmer 2.5s infinite linear; /* Mais lento (2.5s) */
+    animation: shimmer 2.5s infinite linear;
     
     &.w-100 { width: 100%; }
     &.w-95 { width: 95%; }
@@ -458,7 +469,7 @@ export default {
 .staggered-fade-leave-to {
     opacity: 0;
     transform: translateY(-2px);
-    position: absolute; /* Evita pulo de layout na saída */
+    position: absolute;
 }
 
 @keyframes shimmer { 
