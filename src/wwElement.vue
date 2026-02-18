@@ -15,12 +15,14 @@
                         <img :src="botLogoUrl" alt="Bot" class="avatar-img">
                     </div>
 
-                    <!-- Condição de exibição do balão: 
-                         Deve aparecer se estiver carregando OU se tiver texto -->
+                    <!-- O balão aparece se estiver digitando OU se tiver algum conteúdo -->
                     <div v-if="message.isTyping || (message.text && message.text.length > 0)" 
                          class="bubble" :class="message.type">
                         
-                        <template v-if="message.isTyping">
+                        <!-- Lógica Visual Corrigida:
+                             Mostra o Loading SE: Estiver marcado como digitando E (não tem texto OU o texto é só espaço em branco)
+                             Isso garante que o loading nunca suma antes do texto aparecer de verdade. -->
+                        <template v-if="message.isTyping && (!message.text || message.text.trim().length === 0)">
                             <span class="typing">
                                 <span></span><span></span><span></span>
                             </span>
@@ -120,7 +122,8 @@ export default {
             };
             messages.value.push(msg);
             scrollToBottom();
-            return msg;
+            // Retorna o proxy reativo dentro do array para garantir atualizações de tela instantâneas
+            return messages.value[messages.value.length - 1];
         };
 
         const updateTextareaHeight = () => {
@@ -135,25 +138,21 @@ export default {
             try {
                 const data = JSON.parse(jsonStr);
                 
-                // "begin" apenas sinaliza o início, mantemos o loading
+                // "begin": Apenas garante que estamos digitando.
                 if (data.type === 'begin') {
                     if (streamingMessageRef.value) streamingMessageRef.value.isTyping = true;
                 }
 
-                // "item" contém o texto
+                // "item": Adiciona texto. 
+                // NOTA: Não removemos isTyping aqui! Deixamos o template decidir visualmente.
                 if (data.type === 'item' && data.content !== undefined) {
                     if (streamingMessageRef.value) {
-                        // Só removemos o estado de loading se o texto resultante não for vazio
-                        const updatedText = streamingMessageRef.value.text + data.content;
-                        if (updatedText.trim().length > 0) {
-                            streamingMessageRef.value.isTyping = false;
-                        }
-                        streamingMessageRef.value.text = updatedText;
+                        streamingMessageRef.value.text += data.content;
                         scrollToBottom();
                     }
                 }
 
-                // "end" finaliza o carregamento
+                // "end": Só AQUI removemos oficialmente o estado de digitando.
                 if (data.type === 'end') {
                     if (streamingMessageRef.value) {
                         streamingMessageRef.value.isTyping = false;
@@ -202,7 +201,7 @@ export default {
             addMessage(text, 'user');
             isSending.value = true;
             
-            // Cria a mensagem e mantém o isTyping: true até chegar texto real
+            // Inicia mensagem do bot com estado de digitando
             streamingMessageRef.value = addMessage('', 'bot', true); 
             
             streamBuffer.value = '';
@@ -236,9 +235,13 @@ export default {
                 }
             } finally {
                 isSending.value = false;
-                if (streamingMessageRef.value && !streamingMessageRef.value.text) {
+                // Garantia final: se terminou e ainda está 'digitando', desliga.
+                if (streamingMessageRef.value) {
                     streamingMessageRef.value.isTyping = false;
-                    streamingMessageRef.value.text = "O assistente não enviou uma resposta.";
+                    // Se a resposta veio vazia por algum motivo
+                    if (!streamingMessageRef.value.text) {
+                         streamingMessageRef.value.text = "Sem resposta.";
+                    }
                 }
                 setMessageHistory([...messages.value]);
             }
