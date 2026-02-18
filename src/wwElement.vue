@@ -141,7 +141,6 @@ export default {
 
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
         const brandColor = computed(() => props.content?.brandColor || '#ef4444');
-        // Nova computed property para o tema
         const theme = computed(() => props.content?.theme || 'light');
         
         const statusText = computed(() => isSending.value ? 'Respondendo...' : 'Online');
@@ -183,7 +182,10 @@ export default {
         const shouldShowSkeleton = (message, index) => {
             const isLastBotMessage = message.type === 'bot' && isSending.value && index === messages.value.length - 1;
             const hasNoText = !message.text || message.text.trim().length === 0;
-            return message.isTyping || (isLastBotMessage && hasNoText);
+            
+            // CORREÇÃO CRÍTICA: Só mostra o esqueleto se NÃO TIVER TEXTO.
+            // Se tiver texto, mostra o texto, independente de 'isTyping' ser true.
+            return hasNoText && (message.isTyping || isLastBotMessage);
         };
 
         const updateTextareaHeight = () => {
@@ -323,7 +325,7 @@ export default {
             renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, 
             messagesContainer, textareaInput, triggerFileInput, fileInputElement,
             currentLoadingText, getSplitText, currentPhraseIndex, shouldShowSkeleton,
-            theme // Exposto para o template
+            theme
         };
     }
 };
@@ -343,7 +345,7 @@ export default {
     --skeleton-shine: rgba(0,0,0,0.15);
     
     width: 100%; height: 100%; 
-    padding: 0; /* Removido padding externo */
+    padding: 0;
     box-sizing: border-box;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -357,7 +359,6 @@ export default {
         --skeleton-base: rgba(255,255,255,0.08);
         --skeleton-shine: rgba(255,255,255,0.18);
         
-        /* CORREÇÃO CRÍTICA: Força scrollbars escuros no modo dark */
         color-scheme: dark;
     }
 }
@@ -365,10 +366,10 @@ export default {
 .chat-card {
     display: grid; grid-template-rows: auto 1fr auto auto; height: 100%;
     background: var(--panel); 
-    border-radius: 16px; /* Restaurado arredondamento */
-    border: none; /* Removido borda */
+    border-radius: 16px;
+    border: none;
     overflow: hidden;
-    box-shadow: none; /* Removido sombra */
+    box-shadow: none;
     color: var(--text);
 }
 
@@ -405,12 +406,11 @@ export default {
     padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border);
     min-height: 44px;
     display: flex; flex-direction: column; justify-content: center;
-    transition: width 0.3s ease; /* Animação suave na troca de largura */
+    transition: width 0.3s ease;
     
     &.bot { background: var(--bubble-bot-bg); color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
     
-    /* Quando em loading, força largura de 80% DO CONTAINER PAI (.row) */
     &.loading-state {
         width: 80%;
     }
@@ -489,24 +489,19 @@ export default {
 
 .composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid var(--border); }
 .field {
-    flex: 1; display: flex; align-items: flex-end; /* Alterado para flex-end para alinhar no fundo */
+    flex: 1; display: flex; align-items: flex-end;
     gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; 
-    padding: 8px 12px; /* Padding do container */
+    padding: 8px 12px;
     
     textarea {
         flex: 1; border: none; outline: none; background: transparent; font-size: 14px; 
         resize: none; 
-        /* Altura inicial e Line Height sincronizados */
         height: 24px; 
         line-height: 24px; 
         max-height: 160px; 
         font-family: inherit; color: var(--text);
-        
-        /* CORREÇÃO CRÍTICA: Reset de padding e margin para evitar pulos */
         padding: 0; 
         margin: 0;
-        
-        /* Esconde scrollbar nativa até ser estritamente necessário */
         scrollbar-width: none;
         -ms-overflow-style: none;
     }
@@ -515,7 +510,7 @@ export default {
     }
 }
 
-.icon-btn { color: #78716c; cursor: pointer; display: flex; align-items: center; svg { width: 20px; height: 20px; } margin-bottom: 2px; /* Ajuste fino */ }
+.icon-btn { color: #78716c; cursor: pointer; display: flex; align-items: center; svg { width: 20px; height: 20px; } margin-bottom: 2px; }
 .send-btn { 
     background: var(--accent); color: white; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; 
     display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: opacity 0.2s;
