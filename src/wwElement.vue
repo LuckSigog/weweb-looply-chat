@@ -17,21 +17,25 @@
 
                     <!-- Lógica Blindada de Exibição do Balão -->
                     <div v-if="message.isTyping || (message.text && message.text.length > 0) || (message.type === 'bot' && isSending && index === messages.length - 1)" 
-                         class="bubble" :class="message.type">
+                         class="bubble" 
+                         :class="[message.type, { 'loading-state': message.isTyping }]">
                         
                         <!-- Skeleton Loader Moderno (Efeito Shimmer) + Textos Rotativos -->
                         <template v-if="message.isTyping || (message.type === 'bot' && isSending && index === messages.length - 1 && (!message.text || message.text.trim().length === 0))">
                             <div class="skeleton-loader">
-                                <!-- NOVO LOCAL: Texto de Status Dinâmico (Em Cima) -->
+                                <!-- Texto de Status com Animação Letra por Letra -->
                                 <div class="loading-text-wrapper">
-                                    <Transition name="fade" mode="out-in">
-                                        <span :key="currentLoadingText" class="loading-status-text">
-                                            {{ currentLoadingText }}
-                                        </span>
-                                    </Transition>
+                                    <TransitionGroup name="staggered-fade" tag="span" class="loading-text-container">
+                                        <span 
+                                            v-for="(char, i) in getSplitText(currentLoadingText)" 
+                                            :key="`${currentPhraseIndex}-${i}`" 
+                                            class="char"
+                                            :style="{ transitionDelay: `${i * 30}ms` }"
+                                        >{{ char }}</span>
+                                    </TransitionGroup>
                                 </div>
 
-                                <!-- Linhas do Skeleton (Mais largas e animadas) -->
+                                <!-- Linhas do Skeleton (Mais largas e animadas lentamente) -->
                                 <div class="sk-line w-100"></div>
                                 <div class="sk-line w-95"></div>
                                 <div class="sk-line w-85"></div>
@@ -106,21 +110,30 @@ export default {
             'Quase lá...'
         ];
         const currentLoadingText = ref(loadingPhrases[0]);
+        const currentPhraseIndex = ref(0); // Para forçar re-render da animação
         let loadingInterval = null;
 
         const startLoadingTextCycle = () => {
             let index = 0;
+            currentPhraseIndex.value = 0;
             currentLoadingText.value = loadingPhrases[0];
+            
             if (loadingInterval) clearInterval(loadingInterval);
             loadingInterval = setInterval(() => {
                 index = (index + 1) % loadingPhrases.length;
+                currentPhraseIndex.value = index; // Atualiza índice para chave da animação
                 currentLoadingText.value = loadingPhrases[index];
-            }, 2500); // Troca a cada 2.5 segundos
+            }, 3000); // 3 segundos para dar tempo de ler a animação
         };
 
         const stopLoadingTextCycle = () => {
             if (loadingInterval) clearInterval(loadingInterval);
             loadingInterval = null;
+        };
+        
+        // Helper para manter espaços na animação letra por letra
+        const getSplitText = (text) => {
+            return text.split('').map(char => char === ' ' ? '\u00A0' : char);
         };
 
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
@@ -232,7 +245,6 @@ export default {
             addMessage(text, 'user');
             isSending.value = true;
             
-            // Inicia mensagem do bot com estado de digitando e inicia o ciclo de textos
             startLoadingTextCycle();
             streamingMessageRef.value = addMessage('', 'bot', true); 
             
@@ -267,7 +279,7 @@ export default {
                 }
             } finally {
                 isSending.value = false;
-                stopLoadingTextCycle(); // Para o ciclo de textos
+                stopLoadingTextCycle(); 
                 
                 if (streamingMessageRef.value) {
                     streamingMessageRef.value.isTyping = false;
@@ -298,30 +310,49 @@ export default {
             messages, inputText, isSending, brandName, brandColor, botLogoUrl, statusText,
             renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, 
             messagesContainer, textareaInput, triggerFileInput, fileInputElement,
-            currentLoadingText 
+            currentLoadingText, getSplitText, currentPhraseIndex 
         };
     }
 };
 </script>
 
 <style lang="scss" scoped>
+/* Definição de Variáveis com Suporte a Dark Mode */
 .looply-chat-app {
     --bg: #fafaf9;
     --panel: #f5f5f4;
     --text: #1c1917;
     --accent: v-bind(brandColor);
     --border: #F5F5F4;
+    --bubble-bot-bg: #F5F5F4;
+    --skeleton-base: rgba(0,0,0,0.06);
+    --skeleton-shine: rgba(0,0,0,0.15);
+    
     width: 100%; height: 100%; padding: 16px; box-sizing: border-box;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-.chat-card {
-    display: grid; grid-template-rows: auto 1fr auto auto; height: 100%;
-    background: var(--panel); border-radius: 16px; border: 1px solid #e7e5e4; overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+/* Mídia Query para Dark Mode */
+@media (prefers-color-scheme: dark) {
+    .looply-chat-app {
+        --bg: #1c1917;
+        --panel: #292524;
+        --text: #fafaf9;
+        --border: #44403c;
+        --bubble-bot-bg: #292524;
+        --skeleton-base: rgba(255,255,255,0.06);
+        --skeleton-shine: rgba(255,255,255,0.15);
+    }
 }
 
-.header { padding: 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e7e5e4; background: var(--panel); }
+.chat-card {
+    display: grid; grid-template-rows: auto 1fr auto auto; height: 100%;
+    background: var(--panel); border-radius: 16px; border: 1px solid var(--border); overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    color: var(--text);
+}
+
+.header { padding: 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 
 .brand-logo { 
     width: 36px; height: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;
@@ -333,87 +364,101 @@ export default {
     margin-left: auto; 
     font-size: 11px; 
     padding: 4px 10px; 
-    background: white; 
-    border: 1px solid #e7e5e4;
-    color: #444; 
+    background: var(--bg); 
+    border: 1px solid var(--border);
+    color: var(--text); 
+    opacity: 0.8;
     border-radius: 999px; 
 }
 
-.messages { padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: white; }
+.messages { padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
 .row { display: flex; gap: 10px; align-items: flex-end; &.user { justify-content: flex-end; } }
 
 .avatar { 
     width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; 
-    background: #f3f4f6;
+    background: var(--bubble-bot-bg);
 }
-.avatar.user-icon { background: #e7e5e4; }
+.avatar.user-icon { background: var(--border); }
 
 .bubble {
-    max-width: 85%; /* Aumentado de 75% para 85% para dar mais espaço */
-    padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
+    max-width: 85%;
+    padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid var(--border);
     min-height: 44px;
     display: flex; flex-direction: column; justify-content: center;
-    &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
+    
+    &.bot { background: var(--bubble-bot-bg); color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
+    
+    /* Quando em loading, força largura de 80% do chat */
+    &.loading-state {
+        width: 80%;
+    }
 }
 
 .markdown-content :deep(p) { margin: 0; }
 .markdown-content :deep(p + p) { margin-top: 8px; }
-.markdown-content :deep(code) { background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px; }
+.markdown-content :deep(code) { background: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 4px; }
 
-/* Skeleton Loader Moderno (Shimmer) */
+/* Skeleton Loader Moderno */
 .skeleton-loader {
     width: 100%;
-    min-width: 220px; /* Aumentado para garantir um balão largo durante o loading */
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 4px 0;
+    gap: 10px;
+    padding: 6px 0;
 }
 
 .sk-line {
     height: 10px;
     border-radius: 5px;
-    /* Gradiente mais forte para ser mais visível/animado */
     background: linear-gradient(
         90deg, 
-        rgba(0,0,0,0.06) 0%, 
-        rgba(0,0,0,0.15) 50%, 
-        rgba(0,0,0,0.06) 100%
+        var(--skeleton-base) 0%, 
+        var(--skeleton-shine) 50%, 
+        var(--skeleton-base) 100%
     );
     background-size: 200% 100%;
-    /* Animação acelerada de 1.5s para 1s */
-    animation: shimmer 1s infinite linear;
+    animation: shimmer 2.5s infinite linear; /* Mais lento (2.5s) */
     
     &.w-100 { width: 100%; }
-    &.w-95 { width: 95%; } /* Mais largo */
-    &.w-85 { width: 85%; } /* Mais largo */
+    &.w-95 { width: 95%; }
+    &.w-85 { width: 85%; }
 }
 
 /* Estilo do Texto de Status */
 .loading-text-wrapper {
-    height: 16px; 
+    height: 20px; 
     display: flex;
     align-items: center;
-    margin-bottom: 8px; /* Espaço entre texto e skeleton */
+    margin-bottom: 6px;
 }
 
-.loading-status-text {
-    font-size: 12px; /* Levemente maior */
-    color: #57534e; /* Stone-600, mais contraste */
+.loading-text-container {
+    display: inline-block;
+}
+
+.char {
+    display: inline-block;
+    font-size: 12px;
+    color: var(--text);
+    opacity: 0.7;
     font-weight: 500;
-    /* Animação sutil de pulso no texto */
-    animation: textPulse 1.5s infinite ease-in-out;
 }
 
-/* Animação de Fade para troca de texto */
-.fade-enter-active,
-.fade-leave-active {
-    transition: opacity 0.4s ease;
+/* Animação Staggered Fade (Letra por Letra) */
+.staggered-fade-enter-active,
+.staggered-fade-leave-active {
+    transition: opacity 0.5s ease, transform 0.5s ease;
 }
-.fade-enter-from,
-.fade-leave-to {
+
+.staggered-fade-enter-from {
     opacity: 0;
+    transform: translateY(2px);
+}
+.staggered-fade-leave-to {
+    opacity: 0;
+    transform: translateY(-2px);
+    position: absolute; /* Evita pulo de layout na saída */
 }
 
 @keyframes shimmer { 
@@ -421,16 +466,11 @@ export default {
     100% { background-position: 200% 0; } 
 }
 
-@keyframes textPulse {
-    0%, 100% { opacity: 0.7; }
-    50% { opacity: 1; }
-}
-
-.composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid #e7e5e4; }
+.composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid var(--border); }
 .field {
-    flex: 1; display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #e7e5e4; border-radius: 20px; padding: 8px 12px;
+    flex: 1; display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 8px 12px;
     textarea {
-        flex: 1; border: none; outline: none; background: transparent; font-size: 14px; resize: none; height: 21px; max-height: 160px; line-height: 21px; font-family: inherit;
+        flex: 1; border: none; outline: none; background: transparent; font-size: 14px; resize: none; height: 21px; max-height: 160px; line-height: 21px; font-family: inherit; color: var(--text);
     }
 }
 
