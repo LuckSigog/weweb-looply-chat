@@ -15,14 +15,19 @@
                         <img :src="botLogoUrl" alt="Bot" class="avatar-img">
                     </div>
 
-                    <!-- O balão aparece se estiver digitando OU se tiver algum conteúdo -->
-                    <div v-if="message.isTyping || (message.text && message.text.length > 0)" 
+                    <!-- Lógica Blindada de Exibição do Balão:
+                         1. Se estiver marcado como digitando (isTyping).
+                         2. OU se tiver texto visível.
+                         3. OU (Fallback de Segurança) se for a última mensagem do bot e o app estiver no estado "isSending". 
+                            Isso garante que o balão NUNCA suma enquanto aguarda a resposta. -->
+                    <div v-if="message.isTyping || (message.text && message.text.length > 0) || (message.type === 'bot' && isSending && index === messages.length - 1)" 
                          class="bubble" :class="message.type">
                         
-                        <!-- Lógica Visual Corrigida:
-                             Mostra o Loading SE: Estiver marcado como digitando E (não tem texto OU o texto é só espaço em branco)
-                             Isso garante que o loading nunca suma antes do texto aparecer de verdade. -->
-                        <template v-if="message.isTyping && (!message.text || message.text.trim().length === 0)">
+                        <!-- Lógica Visual do Loading:
+                             Mostra Loading se: 
+                             - isTyping for true
+                             - OU se for a última msg do bot, estiver enviando e ainda não tiver texto (proteção contra delay). -->
+                        <template v-if="message.isTyping || (message.type === 'bot' && isSending && index === messages.length - 1 && (!message.text || message.text.trim().length === 0))">
                             <span class="typing">
                                 <span></span><span></span><span></span>
                             </span>
@@ -115,14 +120,13 @@ export default {
 
         const addMessage = (text, type = 'bot', isTyping = false) => {
             const msg = { 
-                text, 
+                text: text || '', // Garante que text nunca seja undefined
                 type, 
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
                 isTyping 
             };
             messages.value.push(msg);
             scrollToBottom();
-            // Retorna o proxy reativo dentro do array para garantir atualizações de tela instantâneas
             return messages.value[messages.value.length - 1];
         };
 
@@ -138,13 +142,10 @@ export default {
             try {
                 const data = JSON.parse(jsonStr);
                 
-                // "begin": Apenas garante que estamos digitando.
                 if (data.type === 'begin') {
                     if (streamingMessageRef.value) streamingMessageRef.value.isTyping = true;
                 }
 
-                // "item": Adiciona texto. 
-                // NOTA: Não removemos isTyping aqui! Deixamos o template decidir visualmente.
                 if (data.type === 'item' && data.content !== undefined) {
                     if (streamingMessageRef.value) {
                         streamingMessageRef.value.text += data.content;
@@ -152,14 +153,14 @@ export default {
                     }
                 }
 
-                // "end": Só AQUI removemos oficialmente o estado de digitando.
                 if (data.type === 'end') {
                     if (streamingMessageRef.value) {
                         streamingMessageRef.value.isTyping = false;
                     }
                 }
             } catch (e) {
-                throw e; 
+                // Previne crash do loop em caso de JSON malformado, mantendo a UI viva
+                console.warn("Stream JSON error ignored:", e);
             }
         };
 
@@ -235,10 +236,9 @@ export default {
                 }
             } finally {
                 isSending.value = false;
-                // Garantia final: se terminou e ainda está 'digitando', desliga.
+                // Garantia final
                 if (streamingMessageRef.value) {
                     streamingMessageRef.value.isTyping = false;
-                    // Se a resposta veio vazia por algum motivo
                     if (!streamingMessageRef.value.text) {
                          streamingMessageRef.value.text = "Sem resposta.";
                     }
@@ -317,7 +317,7 @@ export default {
 
 .bubble {
     max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
-    min-height: 38px; /* Altura mínima para o loading não achatar o balão */
+    min-height: 38px;
     display: flex; flex-direction: column; justify-content: center;
     &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
