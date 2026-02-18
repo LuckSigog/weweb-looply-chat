@@ -1,5 +1,6 @@
 <template>
-    <div class="looply-chat-app">
+    <!-- Adicionado :data-theme para controlar o tema via CSS -->
+    <div class="looply-chat-app" :data-theme="theme">
         <div class="chat-card">
             <div class="header">
                 <div class="brand-logo">
@@ -139,6 +140,9 @@ export default {
 
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
         const brandColor = computed(() => props.content?.brandColor || '#ef4444');
+        // Nova computed property para o tema
+        const theme = computed(() => props.content?.theme || 'light');
+        
         const statusText = computed(() => isSending.value ? 'Respondendo...' : 'Online');
         const botLogoUrl = ref("https://cdn.weweb.io/designs/55281739-2ed5-46ce-9832-6a234daa52c6/sections/Frame_2147223369.png?_wwcv=1770645958747");
 
@@ -175,8 +179,6 @@ export default {
             return messages.value[messages.value.length - 1];
         };
 
-        // Função centralizada para determinar se o esqueleto deve aparecer
-        // Isso sincroniza o v-if e o :class para que a largura nunca quebre
         const shouldShowSkeleton = (message, index) => {
             const isLastBotMessage = message.type === 'bot' && isSending.value && index === messages.value.length - 1;
             const hasNoText = !message.text || message.text.trim().length === 0;
@@ -319,15 +321,17 @@ export default {
             messages, inputText, isSending, brandName, brandColor, botLogoUrl, statusText,
             renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, 
             messagesContainer, textareaInput, triggerFileInput, fileInputElement,
-            currentLoadingText, getSplitText, currentPhraseIndex, shouldShowSkeleton
+            currentLoadingText, getSplitText, currentPhraseIndex, shouldShowSkeleton,
+            theme // Exposto para o template
         };
     }
 };
 </script>
 
 <style lang="scss" scoped>
-/* Definição de Variáveis com Suporte a Dark Mode */
+/* Definição de Variáveis */
 .looply-chat-app {
+    /* Tema Padrão (Light) */
     --bg: #fafaf9;
     --panel: #f5f5f4;
     --text: #1c1917;
@@ -339,17 +343,14 @@ export default {
     
     width: 100%; height: 100%; padding: 16px; box-sizing: border-box;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
 
-/* Mídia Query para Dark Mode */
-@media (prefers-color-scheme: dark) {
-    .looply-chat-app {
+    /* Tema Dark (ativado via atributo de dados) */
+    &[data-theme="dark"] {
         --bg: #1c1917;
         --panel: #292524;
         --text: #fafaf9;
         --border: #44403c;
         --bubble-bot-bg: #292524;
-        /* Aumentei levemente a opacidade para garantir visibilidade no fundo escuro */
         --skeleton-base: rgba(255,255,255,0.08);
         --skeleton-shine: rgba(255,255,255,0.18);
     }
