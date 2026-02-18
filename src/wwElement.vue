@@ -15,8 +15,6 @@
                         <img :src="botLogoUrl" alt="Bot" class="avatar-img">
                     </div>
 
-                    <!-- Condição ajustada para evitar o vácuo visual: 
-                         Mostra o balão se estiver digitando ou se tiver qualquer conteúdo -->
                     <div v-if="message.isTyping || (message.text !== undefined && message.text.length > 0)" 
                          class="bubble" :class="message.type">
                         
@@ -140,29 +138,26 @@ export default {
             try {
                 const data = JSON.parse(jsonStr);
                 
-                // Trata o início da resposta: Apenas preparamos o ambiente
+                // Trata o início da resposta
                 if (data.type === 'begin') {
-                    // NÃO removemos o typing aqui para evitar o buraco visual na tela
-                    if (!streamingMessageRef.value) {
-                        // Apenas garantimos que o ref está pronto
-                    }
+                    // Não fazemos nada, mantemos o indicador de digitando ativo
                 }
 
                 // Trata o conteúdo da resposta
                 if (data.type === 'item' && data.content) {
-                    // REMOVE o typing apenas quando o primeiro pedaço de texto real chegar
-                    removeTypingIndicator();
-
-                    if (!streamingMessageRef.value) {
-                        streamingMessageRef.value = addMessage('', 'bot');
+                    // Em vez de remover e adicionar, transformamos a mensagem existente
+                    if (streamingMessageRef.value) {
+                        streamingMessageRef.value.isTyping = false;
+                        streamingMessageRef.value.text += data.content;
+                        scrollToBottom();
                     }
-                    streamingMessageRef.value.text += data.content;
-                    scrollToBottom();
                 }
 
                 // Trata o fim da resposta
                 if (data.type === 'end') {
-                    removeTypingIndicator(); // Fallback caso o stream tenha sido muito curto
+                    if (streamingMessageRef.value) {
+                        streamingMessageRef.value.isTyping = false;
+                    }
                 }
             } catch (e) {
                 throw e; 
@@ -206,8 +201,11 @@ export default {
 
             addMessage(text, 'user');
             isSending.value = true;
-            addMessage('', 'bot', true); // Adiciona os pontinhos de "digitando"
-            streamingMessageRef.value = null;
+            
+            // Criamos a mensagem de resposta IMEDIATAMENTE com o estado de digitando
+            // E guardamos a referência dela em streamingMessageRef
+            streamingMessageRef.value = addMessage('', 'bot', true); 
+            
             streamBuffer.value = '';
 
             try {
@@ -233,11 +231,17 @@ export default {
                 }
             } catch (e) {
                 console.error("Erro no chat:", e);
-                removeTypingIndicator();
-                addMessage("Ocorreu um problema ao conectar com o assistente.", "bot");
+                if (streamingMessageRef.value) {
+                    streamingMessageRef.value.isTyping = false;
+                    streamingMessageRef.value.text = "Ocorreu um problema ao conectar com o assistente.";
+                } else {
+                    addMessage("Ocorreu um problema ao conectar com o assistente.", "bot");
+                }
             } finally {
                 isSending.value = false;
-                removeTypingIndicator(); // Garantia final
+                if (streamingMessageRef.value) {
+                    streamingMessageRef.value.isTyping = false;
+                }
                 setMessageHistory([...messages.value]);
             }
         };
@@ -312,7 +316,7 @@ export default {
 
 .bubble {
     max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
-    min-height: 20px; /* Garante uma altura mínima para evitar saltos visuais */
+    min-height: 20px; 
     &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
 }
