@@ -15,22 +15,17 @@
                         <img :src="botLogoUrl" alt="Bot" class="avatar-img">
                     </div>
 
-                    <!-- Lógica Blindada de Exibição do Balão:
-                         1. Se estiver marcado como digitando (isTyping).
-                         2. OU se tiver texto visível.
-                         3. OU (Fallback de Segurança) se for a última mensagem do bot e o app estiver no estado "isSending". 
-                            Isso garante que o balão NUNCA suma enquanto aguarda a resposta. -->
+                    <!-- Lógica Blindada de Exibição do Balão -->
                     <div v-if="message.isTyping || (message.text && message.text.length > 0) || (message.type === 'bot' && isSending && index === messages.length - 1)" 
                          class="bubble" :class="message.type">
                         
-                        <!-- Lógica Visual do Loading:
-                             Mostra Loading se: 
-                             - isTyping for true
-                             - OU se for a última msg do bot, estiver enviando e ainda não tiver texto (proteção contra delay). -->
+                        <!-- NOVO: Skeleton Loader (substitui os pontinhos) -->
                         <template v-if="message.isTyping || (message.type === 'bot' && isSending && index === messages.length - 1 && (!message.text || message.text.trim().length === 0))">
-                            <span class="typing">
-                                <span></span><span></span><span></span>
-                            </span>
+                            <div class="skeleton-loader">
+                                <div class="sk-line w-90"></div>
+                                <div class="sk-line w-100"></div>
+                                <div class="sk-line w-60"></div>
+                            </div>
                         </template>
                         <template v-else>
                             <div class="markdown-content" v-html="renderMarkdown(message.text)"></div>
@@ -327,14 +322,31 @@ export default {
 .markdown-content :deep(p + p) { margin-top: 8px; }
 .markdown-content :deep(code) { background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px; }
 
-.typing {
-    display: flex; gap: 4px; padding: 8px 0;
-    span { 
-        width: 6px; height: 6px; background: #9ca3af; border-radius: 50%; animation: blink 1.4s infinite; 
-        &:nth-child(2) { animation-delay: 0.2s; } &:nth-child(3) { animation-delay: 0.4s; }
-    }
+/* Skeleton Loader Style */
+.skeleton-loader {
+    width: 100%;
+    min-width: 120px; /* Garante que o balão tenha um tamanho decente enquanto carrega */
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 0;
 }
-@keyframes blink { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+.sk-line {
+    height: 10px;
+    background: rgba(0,0,0,0.06); /* Cinza sutil */
+    border-radius: 4px;
+    animation: pulse 1.5s infinite ease-in-out;
+    
+    &.w-90 { width: 90%; }
+    &.w-100 { width: 100%; }
+    &.w-60 { width: 60%; }
+}
+
+@keyframes pulse { 
+    0%, 100% { opacity: 0.5; } 
+    50% { opacity: 1; } 
+}
 
 .composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid #e7e5e4; }
 .field {
