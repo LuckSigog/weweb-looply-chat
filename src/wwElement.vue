@@ -15,7 +15,9 @@
                         <img :src="botLogoUrl" alt="Bot" class="avatar-img">
                     </div>
 
-                    <div v-if="message.isTyping || (message.text !== undefined && message.text.length > 0)" 
+                    <!-- Condição de exibição do balão: 
+                         Deve aparecer se estiver carregando OU se tiver texto -->
+                    <div v-if="message.isTyping || (message.text && message.text.length > 0)" 
                          class="bubble" :class="message.type">
                         
                         <template v-if="message.isTyping">
@@ -128,32 +130,30 @@ export default {
             }
         };
 
-        const removeTypingIndicator = () => {
-            const typingIdx = messages.value.findIndex(m => m.isTyping);
-            if (typingIdx > -1) messages.value.splice(typingIdx, 1);
-        };
-
         const handleJsonChunk = (jsonStr) => {
             if (!jsonStr.trim()) return;
             try {
                 const data = JSON.parse(jsonStr);
                 
-                // Trata o início da resposta
+                // "begin" apenas sinaliza o início, mantemos o loading
                 if (data.type === 'begin') {
-                    // Não fazemos nada, mantemos o indicador de digitando ativo
+                    if (streamingMessageRef.value) streamingMessageRef.value.isTyping = true;
                 }
 
-                // Trata o conteúdo da resposta
-                if (data.type === 'item' && data.content) {
-                    // Em vez de remover e adicionar, transformamos a mensagem existente
+                // "item" contém o texto
+                if (data.type === 'item' && data.content !== undefined) {
                     if (streamingMessageRef.value) {
-                        streamingMessageRef.value.isTyping = false;
-                        streamingMessageRef.value.text += data.content;
+                        // Só removemos o estado de loading se o texto resultante não for vazio
+                        const updatedText = streamingMessageRef.value.text + data.content;
+                        if (updatedText.trim().length > 0) {
+                            streamingMessageRef.value.isTyping = false;
+                        }
+                        streamingMessageRef.value.text = updatedText;
                         scrollToBottom();
                     }
                 }
 
-                // Trata o fim da resposta
+                // "end" finaliza o carregamento
                 if (data.type === 'end') {
                     if (streamingMessageRef.value) {
                         streamingMessageRef.value.isTyping = false;
@@ -202,8 +202,7 @@ export default {
             addMessage(text, 'user');
             isSending.value = true;
             
-            // Criamos a mensagem de resposta IMEDIATAMENTE com o estado de digitando
-            // E guardamos a referência dela em streamingMessageRef
+            // Cria a mensagem e mantém o isTyping: true até chegar texto real
             streamingMessageRef.value = addMessage('', 'bot', true); 
             
             streamBuffer.value = '';
@@ -234,13 +233,12 @@ export default {
                 if (streamingMessageRef.value) {
                     streamingMessageRef.value.isTyping = false;
                     streamingMessageRef.value.text = "Ocorreu um problema ao conectar com o assistente.";
-                } else {
-                    addMessage("Ocorreu um problema ao conectar com o assistente.", "bot");
                 }
             } finally {
                 isSending.value = false;
-                if (streamingMessageRef.value) {
+                if (streamingMessageRef.value && !streamingMessageRef.value.text) {
                     streamingMessageRef.value.isTyping = false;
+                    streamingMessageRef.value.text = "O assistente não enviou uma resposta.";
                 }
                 setMessageHistory([...messages.value]);
             }
@@ -316,7 +314,8 @@ export default {
 
 .bubble {
     max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
-    min-height: 20px; 
+    min-height: 38px; /* Altura mínima para o loading não achatar o balão */
+    display: flex; flex-direction: column; justify-content: center;
     &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
 }
@@ -326,7 +325,7 @@ export default {
 .markdown-content :deep(code) { background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px; }
 
 .typing {
-    display: flex; gap: 4px; padding: 4px 0;
+    display: flex; gap: 4px; padding: 8px 0;
     span { 
         width: 6px; height: 6px; background: #9ca3af; border-radius: 50%; animation: blink 1.4s infinite; 
         &:nth-child(2) { animation-delay: 0.2s; } &:nth-child(3) { animation-delay: 0.4s; }
