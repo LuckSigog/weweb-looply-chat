@@ -83,20 +83,41 @@ export default {
         const streamingMessageRef = ref(null);
         const streamBuffer = ref('');
 
-        // Configurações de Marca
+        // Configurações de Marca e Status
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
         const brandColor = computed(() => props.content?.brandColor || '#ef4444');
-        // Alterado: Link da imagem fornecido
+        const statusText = computed(() => isSending.value ? 'Respondendo...' : 'Online');
         const botLogoUrl = ref("https://cdn.weweb.io/designs/55281739-2ed5-46ce-9832-6a234daa52c6/sections/Frame_2147223369.png?_wwcv=1770645958747");
 
-        const { setValue: setMessageHistory } = wwLib.wwVariable.useComponentVariable({ uid: props.uid, name: 'messageHistory', type: 'array', defaultValue: [] });
+        // Variáveis do WeWeb (exemplo de histórico)
+        const { setValue: setMessageHistory } = wwLib.wwVariable.useComponentVariable({ 
+            uid: props.uid, 
+            name: 'messageHistory', 
+            type: 'array', 
+            defaultValue: [] 
+        });
 
         marked.setOptions({ breaks: true, gfm: true });
         const renderMarkdown = (t) => t ? marked.parse(t) : '';
-        const scrollToBottom = () => nextTick(() => { if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight; });
+        
+        const scrollToBottom = () => {
+            nextTick(() => {
+                if (messagesContainer.value) {
+                    messagesContainer.value.scrollTo({
+                        top: messagesContainer.value.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        };
 
         const addMessage = (text, type = 'bot', isTyping = false) => {
-            const msg = { text, type, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), isTyping };
+            const msg = { 
+                text, 
+                type, 
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
+                isTyping 
+            };
             messages.value.push(msg);
             scrollToBottom();
             return msg;
@@ -109,24 +130,86 @@ export default {
             }
         };
 
-        const processSingleJSON = (jsonStr) => {
+        const handleJsonChunk = (jsonStr) => {
+            if (!jsonStr.trim()) return;
             try {
                 const data = JSON.parse(jsonStr);
-                if (data.type === 'begin' || data.type === 'item') {
+                
+                // Trata o início da resposta
+                if (data.type === 'begin') {
+                    // Remove o balão de typing
                     const typingIdx = messages.value.findIndex(m => m.isTyping);
                     if (typingIdx > -1) messages.value.splice(typingIdx, 1);
-                    if (!streamingMessageRef.value) streamingMessageRef.value = addMessage('', 'bot');
-                    if (data.content) {
-                        streamingMessageRef.value.text += data.content;
-                        scrollToBottom();
+                    
+                    // Cria o novo balão de resposta se não existir
+                    if (!streamingMessageRef.value) {
+                        streamingMessageRef.value = addMessage('', 'bot');
                     }
                 }
-            } catch (e) {}
+
+                // Trata o conteúdo da resposta
+                if (data.type === 'item' && data.content) {
+                    // Garantir que o typing saiu (fallback)
+                    const typingIdx = messages.value.findIndex(m => m.isTyping);
+                    if (typingIdx > -1) messages.value.splice(typingIdx, 1);
+
+                    if (!streamingMessageRef.value) {
+                        streamingMessageRef.value = addMessage('', 'bot');
+                    }
+                    streamingMessageRef.value.text += data.content;
+                    scrollToBottom();
+                }
+
+                // Trata o fim da resposta
+                if (data.type === 'end') {
+                    // Opcional: Alguma lógica de finalização
+                }
+            } catch (e) {
+                // Se falhar o parse, provavelmente é um JSON incompleto no buffer
+                throw e; 
+            }
+        };
+
+        const processStreamText = (text) => {
+            streamBuffer.value += text;
+
+            // Divide por quebras de linha (comum em streams NDJSON)
+            let lines = streamBuffer.value.split('\n');
+            
+            // Mantém a última linha no buffer caso esteja incompleta
+            streamBuffer.value = lines.pop();
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                
+                // Lida com múltiplos objetos colados no mesmo chunk (}{)
+                let parts = line.split('}{');
+                if (parts.length > 1) {
+                    parts = parts.map((p, i) => {
+                        if (i === 0) return p + '}';
+                        if (i === parts.length - 1) return '{' + p;
+                        return '{' + p + '}';
+                    });
+                    parts.forEach(p => handleJsonChunk(p));
+                } else {
+                    handleJsonChunk(line);
+                }
+            }
+
+            // Tenta processar o que restou se for um JSON válido
+            try {
+                handleJsonChunk(streamBuffer.value);
+                streamBuffer.value = '';
+            } catch (e) {
+                // Ainda incompleto
+            }
         };
 
         const sendMessage = async () => {
             const text = inputText.value.trim();
             if (!text || isSending.value) return;
+
+            const clientId = props.content?.clientId || '';
 
             inputText.value = '';
             if (textareaInput.value) textareaInput.value.style.height = 'auto';
@@ -135,44 +218,75 @@ export default {
             isSending.value = true;
             addMessage('', 'bot', true); 
             streamingMessageRef.value = null;
+            streamBuffer.value = '';
 
             try {
                 const res = await fetch(props.content.webhookUrl, {
                     method: 'POST',
-                    body: JSON.stringify({ message: text, sessionId: props.uid }),
+                    body: JSON.stringify({ 
+                        message: text, 
+                        sessionId: props.uid,
+                        clientId: clientId // Adicionado conforme solicitado
+                    }),
                     headers: { 'Content-Type': 'application/json' }
                 });
 
+                if (!res.body) throw new Error("Sem corpo de resposta");
+
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
+
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    streamBuffer.value += chunk;
-                    let boundary;
-                    while ((boundary = streamBuffer.value.indexOf('}{')) !== -1) {
-                        processSingleJSON(streamBuffer.value.slice(0, boundary + 1));
-                        streamBuffer.value = streamBuffer.value.slice(boundary + 1);
-                    }
-                    processSingleJSON(streamBuffer.value);
-                    streamBuffer.value = '';
+                    processStreamText(decoder.decode(value, { stream: true }));
                 }
             } catch (e) {
+                console.error("Erro no chat:", e);
+                // Limpa o indicador de carregamento
                 const typingIdx = messages.value.findIndex(m => m.isTyping);
                 if (typingIdx > -1) messages.value.splice(typingIdx, 1);
-                addMessage("Erro de conexão.", "bot");
+                
+                addMessage("Ocorreu um problema ao conectar com o assistente.", "bot");
             } finally {
                 isSending.value = false;
+                // Atualiza o histórico no WeWeb ao final
+                setMessageHistory([...messages.value]);
             }
         };
 
-        const handleKeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+        const handleKeydown = (e) => { 
+            if (e.key === 'Enter' && !e.shiftKey) { 
+                e.preventDefault(); 
+                sendMessage(); 
+            } 
+        };
+
         const triggerFileInput = () => fileInputElement.value.click();
 
-        onMounted(() => { if (props.content?.welcomeMessage) addMessage(props.content.welcomeMessage, 'bot'); });
+        onMounted(() => { 
+            if (props.content?.welcomeMessage) {
+                addMessage(props.content.welcomeMessage, 'bot'); 
+            }
+        });
 
-        return { messages, inputText, isSending, brandName, brandColor, botLogoUrl, renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, messagesContainer, textareaInput, triggerFileInput, fileInputElement };
+        return { 
+            messages, 
+            inputText, 
+            isSending, 
+            brandName, 
+            brandColor, 
+            botLogoUrl, 
+            statusText,
+            renderMarkdown, 
+            updateTextareaHeight, 
+            handleKeydown, 
+            sendMessage, 
+            messagesContainer, 
+            textareaInput, 
+            triggerFileInput, 
+            fileInputElement 
+        };
     }
 };
 </script>
@@ -183,8 +297,9 @@ export default {
     --panel: #f5f5f4;
     --text: #1c1917;
     --accent: v-bind(brandColor);
-    --border: #F5F5F4; /* Alterado: De #E7E5E4 para #F5F5F4 */
+    --border: #F5F5F4;
     width: 100%; height: 100%; padding: 16px; box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .chat-card {
@@ -195,14 +310,21 @@ export default {
 
 .header { padding: 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e7e5e4; background: var(--panel); }
 
-/* Estilo para a logo redonda */
 .brand-logo { 
     width: 36px; height: 36px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;
 }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
 
 .brand-name { font-weight: 700; color: var(--text); }
-.status { margin-left: auto; font-size: 12px; padding: 4px 8px; background: #fee2e2; color: #b91c1c; border-radius: 999px; }
+.status { 
+    margin-left: auto; 
+    font-size: 11px; 
+    padding: 4px 10px; 
+    background: white; 
+    border: 1px solid #e7e5e4;
+    color: #444; 
+    border-radius: 999px; 
+}
 
 .messages { padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: white; }
 .row { display: flex; gap: 10px; align-items: flex-end; &.user { justify-content: flex-end; } }
@@ -211,20 +333,22 @@ export default {
     width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; 
     background: #f3f4f6;
 }
-.avatar.user-icon { background: var(--border); }
+.avatar.user-icon { background: #e7e5e4; }
 
 .bubble {
     max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
-    &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; } /* Alterado: Cor de fundo do balão bot */
+    &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
 }
 
 .markdown-content :deep(p) { margin: 0; }
 .markdown-content :deep(p + p) { margin-top: 8px; }
+.markdown-content :deep(code) { background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px; }
 
 .typing {
     display: flex; gap: 4px; padding: 4px 0;
-    span { width: 6px; height: 6px; background: #9ca3af; border-radius: 50%; animation: blink 1.4s infinite; 
+    span { 
+        width: 6px; height: 6px; background: #9ca3af; border-radius: 50%; animation: blink 1.4s infinite; 
         &:nth-child(2) { animation-delay: 0.2s; } &:nth-child(3) { animation-delay: 0.4s; }
     }
 }
@@ -241,7 +365,8 @@ export default {
 .icon-btn { color: #78716c; cursor: pointer; display: flex; align-items: center; svg { width: 20px; height: 20px; } }
 .send-btn { 
     background: var(--accent); color: white; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; 
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: opacity 0.2s;
+    &:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 .meta { font-size: 10px; margin-top: 4px; display: block; opacity: 0.6; }
