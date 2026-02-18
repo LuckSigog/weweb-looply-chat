@@ -341,7 +341,9 @@ export default {
     --skeleton-base: rgba(0,0,0,0.06);
     --skeleton-shine: rgba(0,0,0,0.15);
     
-    width: 100%; height: 100%; padding: 16px; box-sizing: border-box;
+    width: 100%; height: 100%; 
+    padding: 0; /* Removido padding externo */
+    box-sizing: border-box;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
     /* Tema Dark (ativado via atributo de dados) */
@@ -358,8 +360,11 @@ export default {
 
 .chat-card {
     display: grid; grid-template-rows: auto 1fr auto auto; height: 100%;
-    background: var(--panel); border-radius: 16px; border: 1px solid var(--border); overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    background: var(--panel); 
+    border-radius: 0; /* Removido borda arredondada */
+    border: none; /* Removido borda */
+    overflow: hidden;
+    box-shadow: none; /* Removido sombra */
     color: var(--text);
 }
 
