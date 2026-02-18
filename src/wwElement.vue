@@ -361,7 +361,7 @@ export default {
 .chat-card {
     display: grid; grid-template-rows: auto 1fr auto auto; height: 100%;
     background: var(--panel); 
-    border-radius: 0; /* Removido borda arredondada */
+    border-radius: 16px; /* Restaurado arredondamento */
     border: none; /* Removido borda */
     overflow: hidden;
     box-shadow: none; /* Removido sombra */
