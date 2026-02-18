@@ -67,6 +67,7 @@
                         ref="textareaInput" 
                         v-model="inputText" 
                         placeholder="Escreva sua mensagem..."
+                        rows="1"
                         @keydown="handleKeydown" 
                         @input="updateTextareaHeight"
                     ></textarea>
@@ -355,6 +356,9 @@ export default {
         --bubble-bot-bg: #292524;
         --skeleton-base: rgba(255,255,255,0.08);
         --skeleton-shine: rgba(255,255,255,0.18);
+        
+        /* CORREÇÃO CRÍTICA: Força scrollbars escuros no modo dark */
+        color-scheme: dark;
     }
 }
 
@@ -485,13 +489,33 @@ export default {
 
 .composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid var(--border); }
 .field {
-    flex: 1; display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 8px 12px;
+    flex: 1; display: flex; align-items: flex-end; /* Alterado para flex-end para alinhar no fundo */
+    gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; 
+    padding: 8px 12px; /* Padding do container */
+    
     textarea {
-        flex: 1; border: none; outline: none; background: transparent; font-size: 14px; resize: none; height: 21px; max-height: 160px; line-height: 21px; font-family: inherit; color: var(--text);
+        flex: 1; border: none; outline: none; background: transparent; font-size: 14px; 
+        resize: none; 
+        /* Altura inicial e Line Height sincronizados */
+        height: 24px; 
+        line-height: 24px; 
+        max-height: 160px; 
+        font-family: inherit; color: var(--text);
+        
+        /* CORREÇÃO CRÍTICA: Reset de padding e margin para evitar pulos */
+        padding: 0; 
+        margin: 0;
+        
+        /* Esconde scrollbar nativa até ser estritamente necessário */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    textarea::-webkit-scrollbar { 
+        display: none; 
     }
 }
 
-.icon-btn { color: #78716c; cursor: pointer; display: flex; align-items: center; svg { width: 20px; height: 20px; } }
+.icon-btn { color: #78716c; cursor: pointer; display: flex; align-items: center; svg { width: 20px; height: 20px; } margin-bottom: 2px; /* Ajuste fino */ }
 .send-btn { 
     background: var(--accent); color: white; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; 
     display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: opacity 0.2s;
