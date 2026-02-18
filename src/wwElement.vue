@@ -19,12 +19,21 @@
                     <div v-if="message.isTyping || (message.text && message.text.length > 0) || (message.type === 'bot' && isSending && index === messages.length - 1)" 
                          class="bubble" :class="message.type">
                         
-                        <!-- NOVO: Skeleton Loader (substitui os pontinhos) -->
+                        <!-- Skeleton Loader Moderno (Efeito Shimmer) + Textos Rotativos -->
                         <template v-if="message.isTyping || (message.type === 'bot' && isSending && index === messages.length - 1 && (!message.text || message.text.trim().length === 0))">
                             <div class="skeleton-loader">
-                                <div class="sk-line w-90"></div>
                                 <div class="sk-line w-100"></div>
-                                <div class="sk-line w-60"></div>
+                                <div class="sk-line w-90"></div>
+                                <div class="sk-line w-70"></div>
+                                
+                                <!-- NOVO: Texto de Status Dinâmico -->
+                                <div class="loading-text-wrapper">
+                                    <Transition name="fade" mode="out-in">
+                                        <span :key="currentLoadingText" class="loading-status-text">
+                                            {{ currentLoadingText }}
+                                        </span>
+                                    </Transition>
+                                </div>
                             </div>
                         </template>
                         <template v-else>
@@ -87,6 +96,32 @@ export default {
         const streamingMessageRef = ref(null);
         const streamBuffer = ref('');
 
+        // Lógica de frases de carregamento
+        const loadingPhrases = [
+            'Pensando...',
+            'Analisando o contexto...',
+            'Buscando informações...',
+            'Gerando a melhor resposta...',
+            'Quase lá...'
+        ];
+        const currentLoadingText = ref(loadingPhrases[0]);
+        let loadingInterval = null;
+
+        const startLoadingTextCycle = () => {
+            let index = 0;
+            currentLoadingText.value = loadingPhrases[0];
+            if (loadingInterval) clearInterval(loadingInterval);
+            loadingInterval = setInterval(() => {
+                index = (index + 1) % loadingPhrases.length;
+                currentLoadingText.value = loadingPhrases[index];
+            }, 2500); // Troca a cada 2.5 segundos
+        };
+
+        const stopLoadingTextCycle = () => {
+            if (loadingInterval) clearInterval(loadingInterval);
+            loadingInterval = null;
+        };
+
         const brandName = computed(() => props.content?.brandName || 'LOOPLY');
         const brandColor = computed(() => props.content?.brandColor || '#ef4444');
         const statusText = computed(() => isSending.value ? 'Respondendo...' : 'Online');
@@ -115,7 +150,7 @@ export default {
 
         const addMessage = (text, type = 'bot', isTyping = false) => {
             const msg = { 
-                text: text || '', // Garante que text nunca seja undefined
+                text: text || '', 
                 type, 
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
                 isTyping 
@@ -154,7 +189,6 @@ export default {
                     }
                 }
             } catch (e) {
-                // Previne crash do loop em caso de JSON malformado, mantendo a UI viva
                 console.warn("Stream JSON error ignored:", e);
             }
         };
@@ -197,7 +231,8 @@ export default {
             addMessage(text, 'user');
             isSending.value = true;
             
-            // Inicia mensagem do bot com estado de digitando
+            // Inicia mensagem do bot com estado de digitando e inicia o ciclo de textos
+            startLoadingTextCycle();
             streamingMessageRef.value = addMessage('', 'bot', true); 
             
             streamBuffer.value = '';
@@ -231,7 +266,8 @@ export default {
                 }
             } finally {
                 isSending.value = false;
-                // Garantia final
+                stopLoadingTextCycle(); // Para o ciclo de textos
+                
                 if (streamingMessageRef.value) {
                     streamingMessageRef.value.isTyping = false;
                     if (!streamingMessageRef.value.text) {
@@ -260,7 +296,8 @@ export default {
         return { 
             messages, inputText, isSending, brandName, brandColor, botLogoUrl, statusText,
             renderMarkdown, updateTextareaHeight, handleKeydown, sendMessage, 
-            messagesContainer, textareaInput, triggerFileInput, fileInputElement 
+            messagesContainer, textareaInput, triggerFileInput, fileInputElement,
+            currentLoadingText 
         };
     }
 };
@@ -312,7 +349,7 @@ export default {
 
 .bubble {
     max-width: 75%; padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; border: 1px solid #e7e5e4;
-    min-height: 38px;
+    min-height: 44px;
     display: flex; flex-direction: column; justify-content: center;
     &.bot { background: #F5F5F4; color: var(--text); border-bottom-left-radius: 4px; }
     &.user { background: var(--accent); color: white; border: none; border-bottom-right-radius: 4px; }
@@ -322,30 +359,61 @@ export default {
 .markdown-content :deep(p + p) { margin-top: 8px; }
 .markdown-content :deep(code) { background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px; }
 
-/* Skeleton Loader Style */
+/* Skeleton Loader Moderno (Shimmer) */
 .skeleton-loader {
     width: 100%;
-    min-width: 120px; /* Garante que o balão tenha um tamanho decente enquanto carrega */
+    min-width: 160px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 2px 0;
+    gap: 8px;
+    padding: 4px 0;
 }
 
 .sk-line {
     height: 10px;
-    background: rgba(0,0,0,0.06); /* Cinza sutil */
-    border-radius: 4px;
-    animation: pulse 1.5s infinite ease-in-out;
+    border-radius: 5px;
+    background: linear-gradient(
+        90deg, 
+        rgba(0,0,0,0.04) 0%, 
+        rgba(0,0,0,0.09) 50%, 
+        rgba(0,0,0,0.04) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite linear;
     
-    &.w-90 { width: 90%; }
     &.w-100 { width: 100%; }
-    &.w-60 { width: 60%; }
+    &.w-90 { width: 90%; }
+    &.w-70 { width: 70%; }
 }
 
-@keyframes pulse { 
-    0%, 100% { opacity: 0.5; } 
-    50% { opacity: 1; } 
+/* Estilo do Texto de Status */
+.loading-text-wrapper {
+    height: 16px; /* Altura fixa para evitar pulos quando o texto muda */
+    display: flex;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.loading-status-text {
+    font-size: 11px;
+    color: #78716c; /* Stone-500, discreto */
+    font-weight: 500;
+}
+
+/* Animação de Fade (Vue Transition) */
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.4s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
+}
+
+@keyframes shimmer { 
+    0% { background-position: -200% 0; } 
+    100% { background-position: 200% 0; } 
 }
 
 .composer { padding: 12px 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border-top: 1px solid #e7e5e4; }
